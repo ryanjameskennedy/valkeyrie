@@ -73,7 +73,7 @@ All files are written to the directory specified by `-o`.
 7. `07_{material}_failed_sample_investigation.png` - scatter of reads vs concentration for failed samples (colour = failure reason, marker shape = test type)
 8. `08_{material}_multi_species_genus_detection.png` - genus-level detection proportion boxplot for multi-species samples (with individual data point overlay for n=1 visibility)
 9. `09_spike_abundance_boxplot.png` - Agrobacterium fabrum spike abundance (%) boxplot by IC3/IC4 concentration and sample type (Validation vs Negative Control). Optionally filtered by `--sequencing-run-id`.
-10. `10_negative_control_abundance.png` - stacked species abundance barplot for negative control samples (species ≤1% grouped as "Other")
+10. `10_negative_control_abundance.png` - stacked species abundance barplot for negative control samples (species ≤5% grouped as "Other")
 
 ## Integration with eyrie-popup
 

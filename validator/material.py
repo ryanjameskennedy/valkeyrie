@@ -871,7 +871,7 @@ def create_spike_abundance_boxplot(full_df, mongo_data, output_dir, sequencing_r
 
     # Add sample count annotations above each box
     for i, n in enumerate(box_counts):
-        ax.text(i + 1, 102, f'n={n}', ha='center', va='bottom', fontsize=9, fontstyle='italic')
+        ax.text(i + 1, 100, f'n={n}', ha='center', va='bottom', fontsize=9, fontstyle='italic')
 
     title = 'Spike (Agrobacterium fabrum) Abundance by Concentration and Sample Type'
     if sequencing_run_id:
@@ -891,7 +891,7 @@ def create_negative_control_abundance_barplot(full_df, mongo_data, output_dir):
     """Plot 10: Stacked species abundance barplot for negative control samples.
 
     Shows what contaminants appear in negative control samples. Species with
-    >1% abundance are shown individually; all others are grouped as "Other".
+    >5% abundance are shown individually; all others are grouped as "Other".
     This plot always shows all negative controls (no sequencing run filter).
     """
     click.echo("Creating plot 10: Negative control abundance barplot...")
@@ -913,7 +913,7 @@ def create_negative_control_abundance_barplot(full_df, mongo_data, output_dir):
 
     click.echo(f"  Found {len(df)} negative control samples")
 
-    # Collect species abundance per sample, applying 1% threshold
+    # Collect species abundance per sample, applying 5% threshold
     sample_ids = df['sample_id'].values
     per_sample = []  # list of dicts: {species: abundance}
 
@@ -928,7 +928,7 @@ def create_negative_control_abundance_barplot(full_df, mongo_data, output_dir):
         for hit in hits:
             species = hit.get('species', 'Unknown')
             abundance = float(hit.get('abundance', 0))
-            if abundance > 1.0:
+            if abundance > 5.0:
                 species_dict[species] = abundance
             else:
                 other_total += abundance
@@ -964,9 +964,13 @@ def create_negative_control_abundance_barplot(full_df, mongo_data, output_dir):
     ])
 
     # Colormap
-    species_cmap = plt.get_cmap('tab20')
+    tab20 = plt.get_cmap('tab20')
+    tab20b = plt.get_cmap('tab20b')
     n_species = len(sorted_species)
-    species_colors = [species_cmap(i % 20) for i in range(n_species)]
+    species_colors = [
+        tab20(i % 20) if i < 20 else tab20b(i % 20)
+        for i in range(n_species)
+    ]
     # Make "Other" grey
     if sorted_species[-1] == 'Other':
         species_colors[-1] = (0.7, 0.7, 0.7, 1.0)
@@ -987,7 +991,7 @@ def create_negative_control_abundance_barplot(full_df, mongo_data, output_dir):
     ax.set_xticklabels(sample_ids, rotation=90, fontsize=8)
     ax.set_xlabel('Sample', fontsize=12)
     ax.set_ylabel('Abundance (%)', fontsize=12)
-    ax.set_title('Negative Control Sample Abundance (>1% Species)',
+    ax.set_title('Negative Control Sample Abundance (>5% Species)',
                  fontsize=14, fontweight='bold')
     ax.grid(axis='y', alpha=0.3)
 
