@@ -120,6 +120,8 @@ def filter_df_for_contamination_analysis(df, mongo_data, contamination_material=
     contaminated_samples = df[
         df[material_column].str.contains(contamination_material, case=False, na=False)
     ]
+    # Exclude QC-failed samples
+    contaminated_samples = contaminated_samples[contaminated_samples['reason'] != 'QC Failed']
 
     if len(contaminated_samples) == 0:
         click.echo(f"No {contamination_material} samples found")
@@ -678,6 +680,9 @@ def create_multi_species_genus_detection(df, material_column, output_dir):
     if 'sanger_expected_species' not in df.columns:
         click.echo("  No sanger_expected_species column available")
         return None
+
+    # Exclude QC-failed samples
+    df = df[df['reason'] != 'QC Failed']
 
     rows = []
     for _, row in df.iterrows():
