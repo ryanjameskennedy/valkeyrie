@@ -35,7 +35,7 @@ def cli():
               help='MongoDB collection name')
 @click.option('--material-column', default='material',
               help='Column name for material grouping in material analysis')
-@click.option('--contamination-material', default='cerebrospinalvatska',
+@click.option('--contamination-material', default='cerebrospinalvätska',
               help='Specific material type for contamination analysis')
 @click.option('-v', '--verbose', is_flag=True,
               help='Enable verbose output')
@@ -49,7 +49,7 @@ def validate(input_csv, output_dir, mongo_uri, mongo_db, mongo_collection,
     \b
     - Sanger vs Nanopore matching analysis
     - Concentration vs success rate statistics + 6 plots
-    - Material vs success rate statistics + 5 plots
+    - Material vs success rate statistics + 6 plots
     - converged_metadata.csv and contamination CSV
     """
     from .mongo import connect_to_mongo, fetch_samples_bulk

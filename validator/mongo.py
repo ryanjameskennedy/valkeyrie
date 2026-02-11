@@ -36,6 +36,8 @@ def fetch_samples_bulk(collection, sample_ids):
     """
     projection = {
         "sample_id": 1,
+        "sample_name": 1,
+        "sequencing_run_id": 1,
         "metadata": 1,
         "flagged_top_hits": 1,
         "qc": 1,

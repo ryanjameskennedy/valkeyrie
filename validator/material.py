@@ -139,29 +139,28 @@ def filter_df_for_contamination_analysis(df, mongo_data, contamination_material=
         flagged_contaminants = doc.get('flagged_contaminants', [])
         taxonomic_hits = doc.get('taxonomic_data', {}).get('hits', [])
 
-        if not flagged_contaminants or not taxonomic_hits:
-            continue
-
-        contaminant_counts = {}
-        total_contaminant_reads = 0
+        contaminant_abundance = {}
+        total_contaminant_abundance = 0
 
         for hit in taxonomic_hits:
             species = hit.get('species', '')
-            read_count = hit.get('read_count', 0)
+            abundance = hit.get('abundance', 0)
 
             if species in flagged_contaminants:
-                contaminant_counts[species] = contaminant_counts.get(species, 0) + read_count
-                total_contaminant_reads += read_count
+                contaminant_abundance[species] = contaminant_abundance.get(species, 0) + abundance
+                total_contaminant_abundance += abundance
 
         contamination_data.append({
             'sample_id': sample_id,
+            'sample_name': doc.get('sample_name', sample_id),
+            'sequencing_run_id': doc.get('sequencing_run_id', ''),
             'matching': row['matching'],
             'match_type': row.get('match_type'),
             'reason': row.get('reason'),
-            'total_contaminant_reads': total_contaminant_reads,
-            'num_contaminant_species': len(contaminant_counts),
-            'contaminant_species': '; '.join(contaminant_counts.keys()),
-            'contaminant_counts': contaminant_counts,
+            'total_contaminant_abundance': total_contaminant_abundance,
+            'num_contaminant_species': len(contaminant_abundance),
+            'contaminant_species': '; '.join(contaminant_abundance.keys()),
+            'contaminant_abundance': contaminant_abundance,
         })
 
     if not contamination_data:
@@ -173,17 +172,17 @@ def filter_df_for_contamination_analysis(df, mongo_data, contamination_material=
     click.echo(f"{contamination_material.upper()} samples with contamination data: {len(contamination_df)}")
     click.echo(
         f"Samples with detected contaminants: "
-        f"{len(contamination_df[contamination_df['total_contaminant_reads'] > 0])}"
+        f"{len(contamination_df[contamination_df['total_contaminant_abundance'] > 0])}"
     )
 
     click.echo("\nContamination summary:")
-    click.echo(f"  Mean contaminant reads per sample: {contamination_df['total_contaminant_reads'].mean():.1f}")
-    click.echo(f"  Median contaminant reads per sample: {contamination_df['total_contaminant_reads'].median():.1f}")
-    click.echo(f"  Max contaminant reads: {contamination_df['total_contaminant_reads'].max():.0f}")
+    click.echo(f"  Mean contaminant reads per sample: {contamination_df['total_contaminant_abundance'].mean():.1f}")
+    click.echo(f"  Median contaminant reads per sample: {contamination_df['total_contaminant_abundance'].median():.1f}")
+    click.echo(f"  Max contaminant reads: {contamination_df['total_contaminant_abundance'].max():.0f}")
 
     all_contaminants = {}
     for _, crow in contamination_df.iterrows():
-        for species, count in crow['contaminant_counts'].items():
+        for species, count in crow['contaminant_abundance'].items():
             all_contaminants[species] = all_contaminants.get(species, 0) + count
 
     if all_contaminants:
@@ -197,7 +196,7 @@ def filter_df_for_contamination_analysis(df, mongo_data, contamination_material=
         if len(contamination_df_valid) > 2:
             corr, p_val = stats.pointbiserialr(
                 contamination_df_valid['matching'],
-                contamination_df_valid['total_contaminant_reads'],
+                contamination_df_valid['total_contaminant_abundance'],
             )
             click.echo(f"\nCorrelation between contamination and matching status:")
             click.echo(f"  Point-biserial r = {corr:.3f}, p = {p_val:.4f}")
@@ -247,6 +246,15 @@ def create_material_concentration_boxplot(df, material_stats, material_column, o
         color = plt.cm.RdYlGn(material_success / 100)
         patch.set_facecolor(color)
         patch.set_alpha(0.7)
+
+    from matplotlib.colors import Normalize
+    import matplotlib.cm as cm
+
+    norm = Normalize(vmin=0, vmax=100)
+    sm = cm.ScalarMappable(cmap='RdYlGn', norm=norm)
+    sm.set_array([])
+    cbar = plt.colorbar(sm, ax=ax)
+    cbar.set_label('Success Rate (%)', fontsize=10)
 
     ax.set_xlabel(material_column.replace('_', ' ').title(), fontsize=12)
     ax.set_ylabel('Library Concentration (ng/uL)', fontsize=12)
@@ -325,10 +333,8 @@ def create_material_success_rates(df, material_stats, material_column, output_di
     success_rates = [t['success_rate'] for t in material_stats_sorted]
     n_samples = [t['n'] for t in material_stats_sorted]
 
-    colors = [plt.cm.RdYlGn(sr / 100) for sr in success_rates]
-
     bars = ax.bar(range(len(materials)), success_rates, alpha=0.7,
-                  edgecolor='black', color=colors)
+                  edgecolor='black', color='steelblue')
 
     for i, (bar, n) in enumerate(zip(bars, n_samples)):
         height = bar.get_height()
@@ -356,9 +362,81 @@ def create_material_success_rates(df, material_stats, material_column, output_di
     return filepath
 
 
+def create_material_bubble_plot(df, material_stats, material_column, output_dir):
+    """Plot 4: Bubble plot of mean concentration vs mean reads by material."""
+    click.echo("Creating plot 4: Mean concentration vs mean read count bubble plot...")
+
+    if 'number_of_reads' not in df.columns:
+        click.echo("  No read count data available")
+        return None
+
+    fig, ax = plt.subplots(figsize=(10, 7))
+
+    material_stats_sorted = sorted(material_stats, key=lambda x: x['success_rate'], reverse=True)
+
+    mean_concs = []
+    mean_reads = []
+    success_rates = []
+    labels = []
+    ns = []
+
+    for info in material_stats_sorted:
+        material = info['material']
+        material_df = df[df[material_column] == material]
+        mean_conc = material_df['library_concentration'].mean()
+        mean_read = material_df['number_of_reads'].mean()
+
+        if not pd.isna(mean_conc) and not pd.isna(mean_read):
+            mean_concs.append(mean_conc)
+            mean_reads.append(mean_read)
+            success_rates.append(info['success_rate'])
+            labels.append(material)
+            ns.append(info['n'])
+
+    if not mean_concs:
+        click.echo("  No data to plot")
+        plt.close()
+        return None
+
+    sizes = 100 + np.array(ns) ** 2 * 30
+
+    scatter = ax.scatter(mean_concs, mean_reads,
+                         s=sizes, alpha=0.6, linewidth=0,
+                         c=success_rates, cmap='RdYlGn', vmin=0, vmax=100)
+
+    from adjustText import adjust_text
+
+    texts = []
+    for i, label in enumerate(labels):
+        texts.append(ax.text(mean_concs[i], mean_reads[i], label,
+                             fontsize=9, alpha=0.7))
+    adjust_text(texts, ax=ax)
+
+    ax.set_xlabel('Mean Library Concentration (ng/\u00b5L)', fontsize=12)
+    ax.set_ylabel('Mean Number of Reads', fontsize=12)
+    ax.set_title(
+        f'Mean Read Count vs Mean Concentration by {material_column.replace("_", " ").title()}\n'
+        f'(bubble size = sample count, colour = success rate)',
+        fontsize=14, fontweight='bold',
+    )
+    ax.grid(alpha=0.3)
+
+    y_min, y_max = ax.get_ylim()
+    ax.set_ylim(min(y_min, -y_max * 0.05), y_max)
+
+    cbar = plt.colorbar(scatter, ax=ax)
+    cbar.set_label('Success Rate (%)', fontsize=10)
+
+    plt.tight_layout()
+    filepath = os.path.join(output_dir, f"04_{material_column}_concentration_vs_reads_bubble.png")
+    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+    plt.close()
+    return filepath
+
+
 def create_contamination_heatmap(df, material_column, output_dir):
-    """Plot 4: Crosstab heatmap of material vs mismatch reason."""
-    click.echo("Creating plot 4: Contamination heatmap by material...")
+    """Plot 5: Crosstab heatmap of material vs mismatch reason."""
+    click.echo("Creating plot 5: Contamination heatmap by material...")
 
     mismatches = df[df['matching'] == 0]
     if len(mismatches) == 0:
@@ -382,7 +460,7 @@ def create_contamination_heatmap(df, material_column, output_dir):
                  fontsize=14, fontweight='bold')
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, f"04_{material_column}_contamination_heatmap.png")
+    filepath = os.path.join(output_dir, f"05_{material_column}_contamination_heatmap.png")
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     return filepath
@@ -390,103 +468,97 @@ def create_contamination_heatmap(df, material_column, output_dir):
 
 def create_material_contamination_plot(contamination_df, output_dir,
                                        contamination_material='cerebrospinalvatska'):
-    """Plot 5: 4-panel detailed contamination analysis."""
-    click.echo("Creating plot 5: Contamination analysis...")
+    """Plot 6: Stacked barplot of contaminant species abundance per sample."""
+    click.echo("Creating plot 6: Contamination analysis...")
 
     if contamination_df is None or len(contamination_df) == 0:
         click.echo("  No contamination data available")
         return None
 
-    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(16, 12))
+    # Sort samples by sequencing_run_id so runs are grouped together
+    contamination_df = contamination_df.sort_values('sequencing_run_id')
 
-    # Panel 1: Contaminant reads by match status
-    match_groups = contamination_df.groupby('matching')['total_contaminant_reads'].apply(list)
+    # Collect all unique contaminant species and build a read-count matrix
+    all_species = set()
+    for abundance in contamination_df['contaminant_abundance']:
+        all_species.update(abundance.keys())
 
-    if len(match_groups) > 0:
-        data_to_plot = []
-        labels = []
-        colors_list = []
+    # Sort species by total abundance (descending) so the most common are at
+    # the bottom of the stack and appear first in the legend.
+    sorted_species = []
+    if all_species:
+        species_totals = {}
+        for species in all_species:
+            species_totals[species] = sum(
+                abundance.get(species, 0) for abundance in contamination_df['contaminant_abundance']
+            )
+        sorted_species = sorted(species_totals, key=species_totals.get, reverse=True)
 
-        for match_val in [0, 1]:
-            if match_val in match_groups.index:
-                data_to_plot.append(match_groups[match_val])
-                labels.append('Mismatch' if match_val == 0 else 'Match')
-                colors_list.append(COLORS['mismatch'] if match_val == 0 else COLORS['match'])
+    sample_names = contamination_df['sample_name'].values
+    run_ids = contamination_df['sequencing_run_id'].values
 
-        if data_to_plot:
-            bp = ax1.boxplot(data_to_plot, tick_labels=labels, patch_artist=True,
-                             showmeans=True, widths=0.6)
-            for patch, color in zip(bp['boxes'], colors_list):
-                patch.set_facecolor(color)
-                patch.set_alpha(0.7)
+    if sorted_species:
+        matrix = np.array([
+            [row['contaminant_abundance'].get(sp, 0) for sp in sorted_species]
+            for _, row in contamination_df.iterrows()
+        ])  # shape: (n_samples, n_species)
+    else:
+        matrix = np.zeros((len(sample_names), 0))
 
-            ax1.set_ylabel('Total Contaminant Reads', fontsize=11)
-            ax1.set_title('Contaminant Reads by Match Status', fontsize=12, fontweight='bold')
-            ax1.grid(axis='y', alpha=0.3)
+    # Pick a qualitative colormap with enough colours for species
+    species_cmap = plt.get_cmap('tab20')
+    n_species = len(sorted_species)
+    species_colors = [species_cmap(i % 20) for i in range(n_species)]
 
-    # Panel 2: Number of contaminant species
-    if len(match_groups) > 0:
-        species_data = []
-        for match_val in [0, 1]:
-            if match_val in match_groups.index:
-                species_data.append(
-                    contamination_df[contamination_df['matching'] == match_val]['num_contaminant_species'].values
-                )
+    fig_width = max(10, len(sample_names) * 0.6)
+    fig, ax = plt.subplots(figsize=(fig_width, 8))
 
-        if species_data:
-            bp2 = ax2.boxplot(species_data, tick_labels=labels, patch_artist=True,
-                              showmeans=True, widths=0.6)
-            for patch, color in zip(bp2['boxes'], colors_list):
-                patch.set_facecolor(color)
-                patch.set_alpha(0.7)
+    x = np.arange(len(sample_names))
+    bottoms = np.zeros(len(sample_names))
 
-            ax2.set_ylabel('Number of Contaminant Species', fontsize=11)
-            ax2.set_title('Contaminant Species Count by Match Status', fontsize=12, fontweight='bold')
-            ax2.grid(axis='y', alpha=0.3)
+    for idx, species in enumerate(sorted_species):
+        values = matrix[:, idx]
+        ax.bar(x, values, bottom=bottoms, color=species_colors[idx], edgecolor='white',
+               linewidth=0.3, label=species)
+        bottoms += values
 
-    # Panel 3: Top contaminants horizontal bar
-    all_contaminants = {}
-    for _, crow in contamination_df.iterrows():
-        for species, count in crow['contaminant_counts'].items():
-            all_contaminants[species] = all_contaminants.get(species, 0) + count
+    ax.set_xticks(x)
+    ax.set_xticklabels(sample_names, rotation=90, fontsize=8)
+    ax.set_xlabel('Sample', fontsize=12)
+    ax.set_ylabel('Abundance', fontsize=12)
+    ax.set_title(
+        f'Contaminant Species Abundance per Sample ({contamination_material})',
+        fontsize=14, fontweight='bold',
+    )
+    ax.grid(axis='y', alpha=0.3)
 
-    if all_contaminants:
-        sorted_contaminants = sorted(all_contaminants.items(), key=lambda x: x[1], reverse=True)[:10]
-        species_names = [s[0] for s in sorted_contaminants]
-        species_counts = [s[1] for s in sorted_contaminants]
+    # Colour x-axis tick labels by sequencing_run_id
+    unique_runs = list(dict.fromkeys(run_ids))  # preserves order
+    print("unique_runs", unique_runs)
+    run_cmap = plt.get_cmap('tab10')
+    run_color_map = {run: run_cmap(i % 10) for i, run in enumerate(unique_runs)}
 
-        ax3.barh(range(len(species_names)), species_counts, alpha=0.7,
-                 color=COLORS['contamination'], edgecolor='black')
-        ax3.set_yticks(range(len(species_names)))
-        ax3.set_yticklabels(species_names, fontsize=9)
-        ax3.set_xlabel('Total Read Count', fontsize=11)
-        ax3.set_title(f'Top 10 Contaminant Species ({contamination_material})',
-                       fontsize=12, fontweight='bold')
-        ax3.grid(axis='x', alpha=0.3)
+    for label, run_id in zip(ax.get_xticklabels(), run_ids):
+        label.set_color(run_color_map[run_id])
 
-    # Panel 4: Scatter of contaminant reads vs matching
-    samples_with_contam = contamination_df[contamination_df['total_contaminant_reads'] > 0]
+    # Place species legend outside the plot area
+    if sorted_species:
+        species_legend = ax.legend(
+            fontsize=8, bbox_to_anchor=(1.02, 1), loc='upper left',
+            borderaxespad=0, title='Species',
+        )
+        ax.add_artist(species_legend)
 
-    if len(samples_with_contam) > 0:
-        for match_val, color, label in [
-            (0, COLORS['mismatch'], 'Mismatch'),
-            (1, COLORS['match'], 'Match'),
-        ]:
-            subset = samples_with_contam[samples_with_contam['matching'] == match_val]
-            if len(subset) > 0:
-                ax4.scatter(subset['num_contaminant_species'],
-                            subset['total_contaminant_reads'],
-                            alpha=0.6, s=80, color=color,
-                            edgecolors='black', linewidth=0.5, label=label)
-
-        ax4.set_xlabel('Number of Contaminant Species', fontsize=11)
-        ax4.set_ylabel('Total Contaminant Reads', fontsize=11)
-        ax4.set_title('Contamination Load vs Species Diversity', fontsize=12, fontweight='bold')
-        ax4.legend(fontsize=10)
-        ax4.grid(alpha=0.3)
+    # Add a second legend for sequencing run colours
+    from matplotlib.patches import Patch
+    run_patches = [Patch(facecolor=run_color_map[run], label=run) for run in unique_runs]
+    ax.legend(
+        handles=run_patches, fontsize=8, bbox_to_anchor=(1.02, 0), loc='lower left',
+        borderaxespad=0, title='Sequencing Run',
+    )
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, f"05_{contamination_material}_contamination_analysis.png")
+    filepath = os.path.join(output_dir, f"06_{contamination_material}_contamination_analysis.png")
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     return filepath
@@ -498,8 +570,8 @@ def create_material_contamination_plot(contamination_df, output_dir,
 
 def run_material_analysis(converged_df, mongo_data, output_dir,
                           material_column='material',
-                          contamination_material='cerebrospinalvatska'):
-    """Run the full material analysis: filter, stats, 5 plots, save CSV.
+                          contamination_material='cerebrospinalvätska'):
+    """Run the full material analysis: filter, stats, 6 plots, save CSV.
 
     Parameters
     ----------
@@ -550,6 +622,10 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
         created.append(filepath)
 
     filepath = create_material_success_rates(df, material_stats, material_column, output_dir)
+    if filepath:
+        created.append(filepath)
+
+    filepath = create_material_bubble_plot(df, material_stats, material_column, output_dir)
     if filepath:
         created.append(filepath)
 
