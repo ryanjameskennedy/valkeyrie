@@ -307,6 +307,15 @@ def create_material_reads_boxplot(df, material_stats, material_column, output_di
         patch.set_facecolor(color)
         patch.set_alpha(0.7)
 
+    from matplotlib.colors import Normalize
+    import matplotlib.cm as cm
+
+    norm = Normalize(vmin=0, vmax=100)
+    sm = cm.ScalarMappable(cmap='RdYlGn', norm=norm)
+    sm.set_array([])
+    cbar = plt.colorbar(sm, ax=ax)
+    cbar.set_label('Success Rate (%)', fontsize=10)
+
     ax.set_xlabel(material_column.replace('_', ' ').title(), fontsize=12)
     ax.set_ylabel('Number of Reads', fontsize=12)
     ax.set_title(f'Read Count Distribution by {material_column.replace("_", " ").title()}',
@@ -334,7 +343,7 @@ def create_material_success_rates(df, material_stats, material_column, output_di
     n_samples = [t['n'] for t in material_stats_sorted]
 
     bars = ax.bar(range(len(materials)), success_rates, alpha=0.7,
-                  edgecolor='black', color='steelblue')
+                  edgecolor='black', color='#44aa44')
 
     for i, (bar, n) in enumerate(zip(bars, n_samples)):
         height = bar.get_height()
@@ -534,7 +543,6 @@ def create_material_contamination_plot(contamination_df, output_dir,
 
     # Colour x-axis tick labels by sequencing_run_id
     unique_runs = list(dict.fromkeys(run_ids))  # preserves order
-    print("unique_runs", unique_runs)
     run_cmap = plt.get_cmap('tab10')
     run_color_map = {run: run_cmap(i % 10) for i, run in enumerate(unique_runs)}
 
@@ -564,6 +572,76 @@ def create_material_contamination_plot(contamination_df, output_dir,
     return filepath
 
 
+def create_failed_sample_investigation(df, material_column, output_dir):
+    """Plot 7: Strip plots of concentration & reads for failed samples by material and failure category."""
+    click.echo("Creating plot 7: Failed sample investigation...")
+
+    mismatches = df[df['matching'] == 0].copy()
+    if len(mismatches) == 0:
+        click.echo("  No failed samples to plot")
+        return None
+
+    def _failure_category(row):
+        if row.get('reason') == 'QC Failed':
+            return 'QC Failed'
+        pk = row.get('proteinase_k_test', False)
+        dt = row.get('dilution_test', False)
+        if isinstance(pk, str):
+            pk = pk.lower() == 'true'
+        if isinstance(dt, str):
+            dt = dt.lower() == 'true'
+        if pk:
+            return 'Proteinase K'
+        if dt:
+            return 'Dilution Test'
+        return 'Contamination'
+
+    mismatches['failure_category'] = mismatches.apply(_failure_category, axis=1)
+
+    category_order = ['QC Failed', 'Proteinase K', 'Dilution Test', 'Contamination']
+    palette = {
+        'QC Failed': COLORS['qc_failed'],
+        'Proteinase K': COLORS['inhibition'],
+        'Dilution Test': '#9b59b6',
+        'Contamination': COLORS['contamination'],
+    }
+
+    # Sort materials by sample count descending
+    material_order = mismatches[material_column].value_counts().index.tolist()
+
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14, 10), sharex=True)
+
+    # Top: concentration
+    sns.stripplot(data=mismatches, x=material_column, y='library_concentration',
+                  hue='failure_category', hue_order=category_order, palette=palette,
+                  dodge=True, jitter=0.25, alpha=0.7, size=6,
+                  order=material_order, ax=ax1)
+    ax1.set_ylabel('Library Concentration (ng/uL)')
+    ax1.set_title('Failed Samples: Concentration by Material & Failure Category',
+                   fontweight='bold')
+    ax1.set_xlabel('')
+    ax1.legend(title='Failure Category', bbox_to_anchor=(1.02, 1), loc='upper left')
+    ax1.grid(axis='y', alpha=0.3)
+
+    # Bottom: reads
+    sns.stripplot(data=mismatches, x=material_column, y='number_of_reads',
+                  hue='failure_category', hue_order=category_order, palette=palette,
+                  dodge=True, jitter=0.25, alpha=0.7, size=6,
+                  order=material_order, ax=ax2)
+    ax2.set_ylabel('Number of Reads')
+    ax2.set_title('Failed Samples: Read Count by Material & Failure Category',
+                   fontweight='bold')
+    ax2.set_xticklabels(ax2.get_xticklabels(), rotation=45, ha='right')
+    ax2.legend_.remove()
+    ax2.grid(axis='y', alpha=0.3)
+
+    plt.tight_layout()
+    filepath = os.path.join(output_dir, f"07_{material_column}_failed_sample_investigation.png")
+    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+    plt.close()
+    return filepath
+
+
 # ---------------------------------------------------------------------------
 # Orchestrator
 # ---------------------------------------------------------------------------
@@ -571,7 +649,7 @@ def create_material_contamination_plot(contamination_df, output_dir,
 def run_material_analysis(converged_df, mongo_data, output_dir,
                           material_column='material',
                           contamination_material='cerebrospinalvätska'):
-    """Run the full material analysis: filter, stats, 6 plots, save CSV.
+    """Run the full material analysis: filter, stats, 7 plots, save CSV.
 
     Parameters
     ----------
@@ -634,6 +712,10 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
         created.append(filepath)
 
     filepath = create_material_contamination_plot(contamination_df, output_dir, contamination_material)
+    if filepath:
+        created.append(filepath)
+
+    filepath = create_failed_sample_investigation(df, material_column, output_dir)
     if filepath:
         created.append(filepath)
 
