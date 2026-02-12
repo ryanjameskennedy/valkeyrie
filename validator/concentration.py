@@ -69,14 +69,23 @@ def determine_reason(row):
 
 
 def print_read_distributions(converged_df, mongo_data):
-    """Print min/max/mean/median for total reads, top-hit abundance, and estimated counts."""
+    """Print min/max/mean/median for total reads, top-hit abundance, and estimated counts.
+
+    Excludes negative controls and QC-failed samples.
+    """
 
     click.echo("\n" + "-" * 80)
-    click.echo("READ & TOP-HIT DISTRIBUTIONS")
+    click.echo("READ & TOP-HIT DISTRIBUTIONS (excl. negative controls & QC failures)")
     click.echo("-" * 80)
 
+    # Filter out negative controls and QC-failed samples
+    df = converged_df.copy()
+    df = df[~df['sample_type'].str.contains('negative control', case=False, na=False)]
+    df = df[df['reason'] != 'QC Failed']
+    valid_sids = set(df['sample_id'])
+
     # 1. Total reads per sample
-    reads = converged_df['number_of_reads'].dropna()
+    reads = df['number_of_reads'].dropna()
     if len(reads) > 0:
         click.echo(f"\nTotal reads per sample (n={len(reads)}):")
         click.echo(f"  Min:    {reads.min():.0f}")
@@ -90,7 +99,9 @@ def print_read_distributions(converged_df, mongo_data):
     top_abundances = []
     top_est_counts = []
 
-    for doc in mongo_data.values():
+    for sid, doc in mongo_data.items():
+        if sid not in valid_sids:
+            continue
         hits = doc.get('taxonomic_data', {}).get('hits', [])
         if not hits:
             continue
@@ -159,7 +170,7 @@ def build_converged_dataframe(input_df, mongo_data, matching_df):
                 doc['nanoplot']['processed']['nanostats']['number_of_reads']
             )
         except (KeyError, TypeError):
-            row['number_of_reads'] = None
+            row['number_of_reads'] = 0
 
         meta_rows.append(row)
 
