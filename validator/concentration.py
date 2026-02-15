@@ -582,6 +582,71 @@ def create_mismatch_reads_plot(df, output_dir):
     return filepath
 
 
+def create_reads_by_category_plot(df, output_dir):
+    """Plot 7: Read count distribution by match status and mismatch reason."""
+    click.echo("Creating plot 7: Read count distribution by category...")
+
+    fig, ax = plt.subplots(figsize=(14, 7))
+
+    df_with_reads = df[(df['number_of_reads'].notna()) & (df['matching'].notna())].copy()
+    if len(df_with_reads) == 0:
+        click.echo("  No data to plot")
+        plt.close()
+        return None
+
+    reads_data = []
+    labels = []
+    colors_list = []
+
+    full_matches = df_with_reads[(df_with_reads['matching'] == 1) & (df_with_reads['match_type'] == 'full')]
+    if len(full_matches) > 0:
+        reads_data.append(full_matches['number_of_reads'].values)
+        labels.append(f'Full Match\n(n={len(full_matches)})')
+        colors_list.append(COLORS['full_match'])
+
+    partial_matches = df_with_reads[(df_with_reads['matching'] == 1) & (df_with_reads['match_type'] == 'partial')]
+    if len(partial_matches) > 0:
+        reads_data.append(partial_matches['number_of_reads'].values)
+        labels.append(f'Partial Match\n(n={len(partial_matches)})')
+        colors_list.append(COLORS['partial_match'])
+
+    mismatches = df_with_reads[df_with_reads['matching'] == 0]
+    for reason, color in MISMATCH_REASONS:
+        reason_samples = mismatches[mismatches['reason'] == reason]
+        if len(reason_samples) > 0:
+            reads_data.append(reason_samples['number_of_reads'].values)
+            labels.append(f'{reason}\n(n={len(reason_samples)})')
+            colors_list.append(color)
+
+    if not reads_data:
+        click.echo("  No data to plot")
+        plt.close()
+        return None
+
+    bp = ax.boxplot(
+        reads_data, tick_labels=labels, patch_artist=True,
+        showmeans=True, widths=0.6,
+        boxprops=dict(linewidth=1.5),
+        whiskerprops=dict(linewidth=1.5),
+        capprops=dict(linewidth=1.5),
+        medianprops=dict(linewidth=2, color='darkred'),
+        meanprops=dict(marker='D', markerfacecolor='darkblue', markersize=6, markeredgecolor='black'),
+    )
+    for patch, color in zip(bp['boxes'], colors_list):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.7)
+
+    ax.set_ylabel('Number of Reads', fontsize=12)
+    ax.set_title('Read Count Distribution by Category', fontsize=14, fontweight='bold')
+    ax.grid(axis='y', alpha=0.3)
+
+    plt.tight_layout()
+    filepath = os.path.join(output_dir, "07_reads_by_category.png")
+    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+    plt.close()
+    return filepath
+
+
 def create_dilution_test_plot(df, output_dir):
     """Plot 5: Dilution test results (1:1 vs 1:10 dilution)."""
     click.echo("Creating plot 5: Dilution test analysis...")
@@ -891,6 +956,7 @@ def run_concentration_analysis(converged_df, output_dir):
         lambda: create_mismatch_reads_plot(filtered_df, output_dir),
         lambda: create_dilution_test_plot(filtered_df, output_dir),
         lambda: create_dilution_sample_distribution(filtered_df, output_dir),
+        lambda: create_reads_by_category_plot(filtered_df, output_dir),
     ]:
         path = plot_fn()
         if path:
