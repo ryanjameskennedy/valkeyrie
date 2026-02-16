@@ -374,8 +374,11 @@ def create_concentration_boxplot_combined(df, output_dir, concentration_col='lib
         patch.set_facecolor(color)
         patch.set_alpha(0.7)
 
+    for i, data in enumerate(conc_data):
+        x_jitter = np.random.default_rng(42).normal(i + 1, 0.04, size=len(data))
+        ax.scatter(x_jitter, data, color='black', s=15, alpha=0.4, zorder=3)
+
     ax.set_ylabel('Library Concentration (ng/uL)', fontsize=12)
-    ax.set_title('Concentration Distribution by Match Status', fontsize=14, fontweight='bold')
     ax.grid(axis='y', alpha=0.3)
 
     plt.tight_layout()
@@ -449,8 +452,6 @@ def create_sample_distribution_combined(df, output_dir):
     ax.set_xticks(range(len(categories)))
     ax.set_xticklabels(categories, fontsize=11)
     ax.set_ylabel('Number of Samples', fontsize=12)
-    ax.set_title(f'Sample Distribution by Category (n={total_samples} total)',
-                 fontsize=14, fontweight='bold')
     ax.grid(axis='y', alpha=0.3)
 
     plt.tight_layout()
@@ -496,8 +497,6 @@ def create_species_agreement_plot(df, output_dir):
 
     ax.set_xlabel('Sanger Species Count', fontsize=12)
     ax.set_ylabel('Nanopore Species Count', fontsize=12)
-    ax.set_title('Species Count Agreement (Successful Matches Only)',
-                 fontsize=14, fontweight='bold')
     ax.legend(fontsize=11)
     ax.grid(alpha=0.3)
 
@@ -557,6 +556,10 @@ def create_mismatch_reads_plot(df, output_dir):
         patch.set_facecolor(color)
         patch.set_alpha(0.7)
 
+    for i, data in enumerate(reads_data):
+        x_jitter = np.random.default_rng(42).normal(i + 1, 0.04, size=len(data))
+        ax.scatter(x_jitter, data, color='black', s=15, alpha=0.4, zorder=3)
+
     # Label outliers
     for i, (data, sample_info) in enumerate(zip(reads_data, sample_ids_by_reason)):
         q1 = np.percentile(data, 25)
@@ -571,8 +574,6 @@ def create_mismatch_reads_plot(df, output_dir):
                         fontsize=8, ha='left', va='center', alpha=0.7)
 
     ax.set_ylabel('Number of Reads', fontsize=12)
-    ax.set_title('Read Count Distribution by Mismatch Reason',
-                 fontsize=14, fontweight='bold')
     ax.grid(axis='y', alpha=0.3)
 
     plt.tight_layout()
@@ -636,8 +637,11 @@ def create_reads_by_category_plot(df, output_dir):
         patch.set_facecolor(color)
         patch.set_alpha(0.7)
 
+    for i, data in enumerate(reads_data):
+        x_jitter = np.random.default_rng(42).normal(i + 1, 0.04, size=len(data))
+        ax.scatter(x_jitter, data, color='black', s=15, alpha=0.4, zorder=3)
+
     ax.set_ylabel('Number of Reads', fontsize=12)
-    ax.set_title('Read Count Distribution by Category', fontsize=14, fontweight='bold')
     ax.grid(axis='y', alpha=0.3)
 
     plt.tight_layout()
@@ -764,8 +768,6 @@ def create_dilution_test_plot(df, output_dir):
 
     ax.set_ylabel('Sample', fontsize=12)
     ax.set_xlabel('Sample Pair', fontsize=12)
-    ax.set_title('Dilution Test Results (1:1 vs 1:10)\nX = QC Failed, Italic = Sanger Expected Species',
-                 fontsize=14, fontweight='bold')
     ax.set_xticks(x_array)
     ax.set_xticklabels(labels, rotation=45, ha='right', fontsize=9)
     ax.set_ylim(0, 1.35)
@@ -864,10 +866,9 @@ def create_dilution_sample_distribution(df, output_dir):
         if values_1_1[i] > 0 or values_1_10[i] > 0:
             ax.bar(x[0], values_1_1[i], bar_width, bottom=bottom_1_1,
                    label=cat, color=colors_map[cat], alpha=0.7,
-                   edgecolor='black', linewidth=1.5)
+)
             ax.bar(x[1], values_1_10[i], bar_width, bottom=bottom_1_10,
-                   color=colors_map[cat], alpha=0.7,
-                   edgecolor='black', linewidth=1.5)
+                   color=colors_map[cat], alpha=0.7)
 
             if values_1_1[i] > 0:
                 ax.text(x[0], bottom_1_1 + values_1_1[i] / 2, str(values_1_1[i]),
@@ -889,8 +890,6 @@ def create_dilution_sample_distribution(df, output_dir):
     ax.set_xticks(x)
     ax.set_xticklabels(['1:1 Dilution', '1:10 Dilution'], fontsize=12)
     ax.set_ylabel('Number of Samples', fontsize=12)
-    ax.set_title('Sample Distribution: 1:1 vs 1:10 Dilution',
-                 fontsize=14, fontweight='bold')
     ax.legend(loc='upper left', fontsize=10)
     ax.grid(axis='y', alpha=0.3)
 

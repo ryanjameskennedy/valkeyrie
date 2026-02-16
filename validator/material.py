@@ -265,8 +265,6 @@ def create_material_concentration_boxplot(df, material_stats, material_column, o
 
     ax.set_xlabel(material_column.replace('_', ' ').title(), fontsize=12)
     ax.set_ylabel('Library Concentration (ng/uL)', fontsize=12)
-    ax.set_title(f'Concentration Distribution by {material_column.replace("_", " ").title()}',
-                 fontsize=14, fontweight='bold')
     ax.set_xticklabels(conc_labels, rotation=45, ha='right')
     ax.grid(axis='y', alpha=0.3)
 
@@ -330,8 +328,6 @@ def create_material_reads_boxplot(df, material_stats, material_column, output_di
 
     ax.set_xlabel(material_column.replace('_', ' ').title(), fontsize=12)
     ax.set_ylabel('Number of Reads', fontsize=12)
-    ax.set_title(f'Read Count Distribution by {material_column.replace("_", " ").title()}',
-                 fontsize=14, fontweight='bold')
     ax.set_xticklabels(reads_labels, rotation=45, ha='right')
     ax.grid(axis='y', alpha=0.3)
 
@@ -368,8 +364,6 @@ def create_material_success_rates(df, material_stats, material_column, output_di
 
     ax.set_xlabel(material_column.replace('_', ' ').title(), fontsize=12)
     ax.set_ylabel('Success Rate (%)', fontsize=12)
-    ax.set_title(f'Success Rate by {material_column.replace("_", " ").title()}',
-                 fontsize=14, fontweight='bold')
     ax.set_xticks(range(len(materials)))
     ax.set_xticklabels(materials, rotation=45, ha='right')
     ax.set_ylim(0, 105)
@@ -435,11 +429,6 @@ def create_material_bubble_plot(df, material_stats, material_column, output_dir)
 
     ax.set_xlabel('Mean Library Concentration (ng/\u00b5L)', fontsize=12)
     ax.set_ylabel('Mean Number of Reads', fontsize=12)
-    ax.set_title(
-        f'Mean Read Count vs Mean Concentration by {material_column.replace("_", " ").title()}\n'
-        f'(bubble size = sample count, colour = success rate)',
-        fontsize=14, fontweight='bold',
-    )
     ax.grid(alpha=0.3)
 
     y_min, y_max = ax.get_ylim()
@@ -477,8 +466,6 @@ def create_contamination_heatmap(df, material_column, output_dir):
 
     ax.set_xlabel('Mismatch Reason', fontsize=12)
     ax.set_ylabel(material_column.replace('_', ' ').title(), fontsize=12)
-    ax.set_title(f'Mismatch Reasons by {material_column.replace("_", " ").title()}',
-                 fontsize=14, fontweight='bold')
 
     plt.tight_layout()
     filepath = os.path.join(output_dir, f"05_{material_column}_contamination_heatmap.png")
@@ -547,10 +534,6 @@ def create_material_contamination_plot(contamination_df, output_dir,
     ax.set_xticklabels(sample_names, rotation=90, fontsize=8)
     ax.set_xlabel('Sample', fontsize=12)
     ax.set_ylabel('Abundance', fontsize=12)
-    ax.set_title(
-        f'Contaminant Species Abundance per Sample ({contamination_material})',
-        fontsize=14, fontweight='bold',
-    )
     ax.grid(axis='y', alpha=0.3)
 
     # Colour x-axis tick labels by sequencing_run_id
@@ -648,8 +631,6 @@ def create_failed_sample_investigation(df, material_column, output_dir):
 
     ax.set_xlabel('Number of Reads', fontsize=12)
     ax.set_ylabel('Library Concentration (ng/\u00b5L)', fontsize=12)
-    ax.set_title('Failed Samples: Reads vs Concentration by Failure Category',
-                 fontsize=14, fontweight='bold')
     from matplotlib.lines import Line2D
     color_handles = [Line2D([0], [0], marker='o', color='w', markerfacecolor=c,
                             markersize=8, label=r)
@@ -736,10 +717,6 @@ def create_multi_species_genus_detection(df, material_column, output_dir):
 
     ax.set_xlabel(material_column.replace('_', ' ').title(), fontsize=12)
     ax.set_ylabel('Proportion of Expected Species Detected (Genus Level)', fontsize=12)
-    ax.set_title(
-        f'Genus-Level Detection for Multi-Species Samples by {material_column.replace("_", " ").title()}',
-        fontsize=14, fontweight='bold',
-    )
     ax.set_xticklabels(material_order, rotation=45, ha='right')
     ax.set_ylim(0, 1.05)
     ax.grid(axis='y', alpha=0.3)
@@ -873,10 +850,6 @@ def create_spike_abundance_boxplot(full_df, mongo_data, output_dir, sequencing_r
     for i, n in enumerate(box_counts):
         ax.text(i + 1, 100, f'n={n}', ha='center', va='bottom', fontsize=9, fontstyle='italic')
 
-    title = 'Spike (Agrobacterium fabrum) Abundance by Concentration and Sample Type'
-    if sequencing_run_id:
-        title += f'\n(Run: {sequencing_run_id})'
-    ax.set_title(title, fontsize=14, fontweight='bold')
     ax.set_ylabel('Abundance (%)', fontsize=12)
     ax.grid(axis='y', alpha=0.3)
 
@@ -991,8 +964,6 @@ def create_negative_control_abundance_barplot(full_df, mongo_data, output_dir):
     ax.set_xticklabels(sample_ids, rotation=90, fontsize=8)
     ax.set_xlabel('Sample', fontsize=12)
     ax.set_ylabel('Abundance (%)', fontsize=12)
-    ax.set_title('Negative Control Sample Abundance (>5% Species)',
-                 fontsize=14, fontweight='bold')
     ax.grid(axis='y', alpha=0.3)
 
     # Place species legend outside the plot area
