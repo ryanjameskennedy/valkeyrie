@@ -1,4 +1,4 @@
-"""Click CLI entry point for eyrie-validator."""
+"""Click CLI entry point for valkeyrie."""
 
 import os
 import sys
@@ -8,10 +8,10 @@ import pandas as pd
 
 
 @click.group()
-@click.version_option(version=None, prog_name="eyrie-validator",
-                      package_name="eyrie-validator")
+@click.version_option(version=None, prog_name="valkeyrie",
+                      package_name="valkeyrie")
 def cli():
-    """Eyrie Validator - 16S Nanopore sequencing validation analysis.
+    """Valkeyrie - 16S Nanopore sequencing validation analysis.
 
     Compares Sanger and Nanopore results, analyses concentration and material
     effects on sequencing success, and generates statistical reports with
@@ -63,7 +63,7 @@ def validate(input_csv, output_dir, mongo_uri, mongo_db, mongo_collection,
     from .material import run_material_analysis
 
     click.echo("=" * 80)
-    click.echo("EYRIE VALIDATOR - 16S NANOPORE VALIDATION ANALYSIS")
+    click.echo("VALKEYRIE - 16S NANOPORE VALIDATION ANALYSIS")
     click.echo("=" * 80)
 
     # Create output directory

@@ -1,4 +1,4 @@
-# eyrie-validator
+# valkeyrie
 
 CLI tool for 16S Nanopore sequencing validation analysis. Consolidates four standalone validation scripts into a single pipeline that compares Sanger and Nanopore results, analyses concentration and material effects on sequencing success, and generates statistical reports with visualisations.
 
@@ -7,15 +7,15 @@ CLI tool for 16S Nanopore sequencing validation analysis. Consolidates four stan
 Install the heavy scientific dependencies via conda first (provides pre-built binaries and avoids C compilation issues), then pip-install the package on top:
 
 ```bash
-conda create -n eyrie-validator python=3.11 numpy pandas scipy matplotlib seaborn
-conda activate eyrie-validator
+conda create -n valkeyrie python=3.11 numpy pandas scipy matplotlib seaborn
+conda activate valkeyrie
 pip install .
 ```
 
 ## Usage
 
 ```bash
-eyrie-validator validate -i samples.csv -o results/
+valkeyrie validate -i samples.csv -o results/
 ```
 
 ### Options
@@ -77,7 +77,7 @@ All files are written to the directory specified by `-o`.
 
 ## Integration with eyrie-popup
 
-The `validator/` package is designed as a standalone module. To integrate it into the eyrie-popup application, copy it into `popup/validator/` and add the CLI entry point to the popup's command group.
+The `valkeyrie/` package is designed as a standalone module. To integrate it into the eyrie-popup application, copy it into `popup/valkeyrie/` and add the CLI entry point to the popup's command group.
 
 ## License
 

@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "eyrie-validator"
+name = "valkeyrie"
 dynamic = ["version"]
 description = "16S Nanopore sequencing validation analysis - Sanger vs Nanopore comparison, concentration and material analysis"
 license = {text = "MIT"}
@@ -48,10 +48,10 @@ Homepage = "https://github.com/clinicalgenomicslund/eyrie"
 Repository = "https://github.com/clinicalgenomicslund/eyrie"
 
 [project.scripts]
-eyrie-validator = "validator.cli:cli"
+valkeyrie = "valkeyrie.cli:cli"
 
 [tool.hatch.version]
-path = "validator/__version__.py"
+path = "valkeyrie/__version__.py"
 
 [tool.hatch.build.targets.wheel]
-packages = ["validator"]
+packages = ["valkeyrie"]
