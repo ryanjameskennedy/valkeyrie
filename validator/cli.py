@@ -39,10 +39,13 @@ def cli():
               help='Specific material type for contamination analysis')
 @click.option('--sequencing-run-id', default=None,
               help='Filter spike analysis to a specific sequencing run ID')
+@click.option('--correct-concentration', is_flag=True,
+              help='Correct library concentration by the ratio of processed to unprocessed reads')
 @click.option('-v', '--verbose', is_flag=True,
               help='Enable verbose output')
 def validate(input_csv, output_dir, mongo_uri, mongo_db, mongo_collection,
-             material_column, contamination_material, sequencing_run_id, verbose):
+             material_column, contamination_material, sequencing_run_id,
+             correct_concentration, verbose):
     """Run full 16S validation pipeline.
 
     Takes a CSV with sample_id, dilution_test, proteinase_k_test columns,
@@ -95,7 +98,8 @@ def validate(input_csv, output_dir, mongo_uri, mongo_db, mongo_collection,
     matching_df = generate_matching(mongo_data)
 
     # 4. Build converged DataFrame
-    converged_df = build_converged_dataframe(input_df, mongo_data, matching_df)
+    converged_df = build_converged_dataframe(input_df, mongo_data, matching_df,
+                                                correct_concentration=correct_concentration)
 
     # 4b. Print read and top-hit distributions
     print_read_distributions(converged_df, mongo_data)
@@ -105,7 +109,9 @@ def validate(input_csv, output_dir, mongo_uri, mongo_db, mongo_collection,
     click.echo("CONCENTRATION VS SUCCESS RATE ANALYSIS")
     click.echo("=" * 80)
 
-    filtered_df = run_concentration_analysis(converged_df, output_dir)
+    file_suffix = '_corrected' if correct_concentration else ''
+    filtered_df = run_concentration_analysis(converged_df, output_dir,
+                                             file_suffix=file_suffix)
 
     # 6. Run material analysis (saves 5 plots + contamination CSV)
     click.echo("\n" + "=" * 80)

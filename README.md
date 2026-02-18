@@ -28,7 +28,7 @@ eyrie-validator validate -i samples.csv -o results/
 | `--mongo-db` | `eyrie` | MongoDB database name |
 | `--mongo-collection` | `samples` | MongoDB collection name |
 | `--material-column` | `material` | Column name for material grouping |
-| `--contamination-material` | `cerebrospinalvatska` | Material type for contamination analysis |
+| `--contamination-material` | `cerebrospinalvätska` | Material type for contamination analysis |
 | `--sequencing-run-id` | `None` | Filter spike analysis to a specific sequencing run ID |
 | `-v`, `--verbose` | off | Enable verbose output |
 

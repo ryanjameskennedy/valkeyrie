@@ -43,6 +43,7 @@ def fetch_samples_bulk(collection, sample_ids):
         "qc": 1,
         "comments.qc": 1,
         "nanoplot.processed.nanostats.number_of_reads": 1,
+        "nanoplot.unprocessed.nanostats.number_of_reads": 1,
         "flagged_contaminants": 1,
         "taxonomic_data.hits": 1,
         "_id": 0,

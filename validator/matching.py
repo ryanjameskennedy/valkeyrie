@@ -46,18 +46,21 @@ def categorize_match(sanger_species, nanopore_species):
         return {
             'matching': False, 'match_type': 'mismatch', 'genus_match_count': 0,
             'sanger_missing_count': 0, 'nanopore_missing_count': 0,
+            'sanger_undetected_count': 0,
             'reason': 'Both Sanger and Nanopore data missing',
         }
     if not sanger_set:
         return {
             'matching': False, 'match_type': 'mismatch', 'genus_match_count': 0,
             'sanger_missing_count': 0, 'nanopore_missing_count': len(nanopore_set),
+            'sanger_undetected_count': 0,
             'reason': 'Sanger data missing',
         }
     if not nanopore_set:
         return {
             'matching': False, 'match_type': 'mismatch', 'genus_match_count': 0,
             'sanger_missing_count': len(sanger_set), 'nanopore_missing_count': 0,
+            'sanger_undetected_count': len(sanger_set),
             'reason': 'Nanopore data missing',
         }
 
@@ -73,6 +76,7 @@ def categorize_match(sanger_species, nanopore_species):
             return {
                 'matching': True, 'match_type': 'full', 'genus_match_count': 0,
                 'sanger_missing_count': 0, 'nanopore_missing_count': 0,
+                'sanger_undetected_count': 0,
                 'reason': 'Complete agreement between Sanger and Nanopore',
             }
         else:
@@ -80,12 +84,19 @@ def categorize_match(sanger_species, nanopore_species):
                 [s for s in sanger_species if s.lower() in sanger_only],
                 [s for s in nanopore_species if s.lower() in nanopore_only],
             )
+            # Count sanger-only species whose genus is NOT in nanopore genera
+            nanopore_genera = {sp.split()[0].lower() for sp in nanopore_species if sp.split()}
+            sanger_undetected_count = sum(
+                1 for sp in sanger_only
+                if sp.split()[0].lower() not in nanopore_genera
+            ) if sanger_only else 0
             genus_note = f"; {genus_match_count} genus-level matches" if genus_match_count > 0 else ""
             return {
                 'matching': True, 'match_type': 'partial',
                 'genus_match_count': genus_match_count,
                 'sanger_missing_count': sanger_missing_count,
                 'nanopore_missing_count': nanopore_missing_count,
+                'sanger_undetected_count': sanger_undetected_count,
                 'reason': (
                     f'Partial match: {len(overlap)} species overlap; '
                     f'{nanopore_missing_count} Sanger species not found in Nanopore; '
@@ -97,11 +108,18 @@ def categorize_match(sanger_species, nanopore_species):
     genus_match_count = count_genus_matches(sanger_species, nanopore_species)
 
     if genus_match_count > 0:
+        # Count sanger species whose genus is NOT in nanopore genera
+        nanopore_genera = {sp.split()[0].lower() for sp in nanopore_species if sp.split()}
+        sanger_undetected_count = sum(
+            1 for sp in sanger_set
+            if sp.split()[0].lower() not in nanopore_genera
+        )
         return {
             'matching': True, 'match_type': 'partial',
             'genus_match_count': genus_match_count,
             'sanger_missing_count': sanger_missing_count,
             'nanopore_missing_count': nanopore_missing_count,
+            'sanger_undetected_count': sanger_undetected_count,
             'reason': f'Genus-level match only: {genus_match_count} genus matches (species differ)',
         }
 
@@ -109,6 +127,7 @@ def categorize_match(sanger_species, nanopore_species):
         'matching': False, 'match_type': 'mismatch', 'genus_match_count': 0,
         'sanger_missing_count': sanger_missing_count,
         'nanopore_missing_count': nanopore_missing_count,
+        'sanger_undetected_count': nanopore_missing_count,
         'reason': (
             f'No overlap: Sanger expected {" & ".join(sanger_species)}; '
             f'Nanopore found {" & ".join(nanopore_species)}'
@@ -128,7 +147,8 @@ def generate_matching(samples_data):
     -------
     pandas.DataFrame
         Columns: sample_id, matching, match_type, genus_match_count,
-        sanger_missing_count, nanopore_missing_count, qc, comments_qc
+        sanger_missing_count, nanopore_missing_count, sanger_undetected_count,
+        qc, comments_qc
     """
     click.echo("=" * 80)
     click.echo("PROCESSING SAMPLES: SANGER vs NANOPORE MATCHING")
@@ -168,6 +188,7 @@ def generate_matching(samples_data):
                 'sample_id': clean_string(sample_id),
                 'matching': None, 'match_type': None, 'genus_match_count': None,
                 'sanger_missing_count': None, 'nanopore_missing_count': None,
+                'sanger_undetected_count': None,
                 'qc': clean_string(qc), 'comments_qc': comments_qc,
             })
             skipped_controls += 1
@@ -190,6 +211,7 @@ def generate_matching(samples_data):
             'genus_match_count': match_result['genus_match_count'],
             'sanger_missing_count': match_result['sanger_missing_count'],
             'nanopore_missing_count': match_result['nanopore_missing_count'],
+            'sanger_undetected_count': match_result['sanger_undetected_count'],
             'qc': clean_string(qc),
             'comments_qc': comments_qc,
         })

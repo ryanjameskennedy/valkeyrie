@@ -11,7 +11,7 @@ import numpy as np
 import pandas as pd
 from scipy import stats
 
-from .plots import COLORS, MISMATCH_REASONS, setup_plot_style
+from .plots import COLORS, MATCH_CATEGORIES, MISMATCH_REASONS, setup_plot_style
 from .stats import create_concentration_bins
 
 import matplotlib
@@ -66,6 +66,30 @@ def determine_reason(row):
         return 'Inhibition'
 
     return 'Contamination'
+
+
+def assign_match_category(df):
+    """Add a ``match_category`` column that splits matches into 3 tiers.
+
+    Categories for matches (matching==1):
+      - Species Match: nanopore_missing_count == 0 (all sanger species found at species level)
+      - Genus Match: sanger_undetected_count == 0 (all detected at genus+, some only genus)
+      - Partial Match: some sanger species undetected even at genus level
+
+    Non-matches keep their ``reason`` value (QC Failed / Inhibition / Contamination).
+    """
+    result = df.copy()
+    conditions = [
+        (result['matching'] == 1) & (result['nanopore_missing_count'].fillna(0) == 0),
+        (result['matching'] == 1) & (result['sanger_undetected_count'].fillna(0) == 0),
+        (result['matching'] == 1),
+    ]
+    choices = ['Species Match', 'Genus Match', 'Partial Match']
+    result['match_category'] = np.select(conditions, choices, default='')
+    # For non-matches, use the reason column
+    mask_non_match = result['matching'] == 0
+    result.loc[mask_non_match, 'match_category'] = result.loc[mask_non_match, 'reason']
+    return result
 
 
 def print_read_distributions(converged_df, mongo_data):
@@ -131,7 +155,7 @@ def print_read_distributions(converged_df, mongo_data):
         click.echo("\nNo estimated counts data available in top hits")
 
 
-def build_converged_dataframe(input_df, mongo_data, matching_df):
+def build_converged_dataframe(input_df, mongo_data, matching_df, correct_concentration=False):
     """Merge user CSV + MongoDB metadata + matching data into one DataFrame.
 
     Parameters
@@ -173,9 +197,20 @@ def build_converged_dataframe(input_df, mongo_data, matching_df):
         except (KeyError, TypeError):
             row['number_of_reads'] = 0
 
+        try:
+            row['unprocessed_reads'] = (
+                doc['nanoplot']['unprocessed']['nanostats']['number_of_reads']
+            )
+        except (KeyError, TypeError):
+            row['unprocessed_reads'] = 0
+
         meta_rows.append(row)
 
     mongo_df = pd.DataFrame(meta_rows)
+
+    # Strip input_df to only required columns to prevent collisions with
+    # MongoDB metadata columns (e.g. library_concentration, material).
+    input_df = input_df[['sample_id', 'dilution_test', 'proteinase_k_test']].copy()
 
     # Merge: input CSV -> mongo metadata -> matching
     merged = input_df.merge(mongo_df, on='sample_id', how='left')
@@ -187,9 +222,24 @@ def build_converged_dataframe(input_df, mongo_data, matching_df):
         merged['library_concentration'], errors='coerce'
     )
     merged['number_of_reads'] = pd.to_numeric(merged['number_of_reads'], errors='coerce')
+    merged['unprocessed_reads'] = pd.to_numeric(merged['unprocessed_reads'], errors='coerce')
+    merged['sanger_undetected_count'] = pd.to_numeric(
+        merged.get('sanger_undetected_count', 0), errors='coerce'
+    )
+
+    # Preserve raw library concentration before potential correction
+    merged['raw_library_concentration'] = merged['library_concentration'].copy()
+
+    # Optionally correct library concentration by the ratio of processed to unprocessed reads
+    if correct_concentration:
+        read_ratio = merged['number_of_reads'] / merged['unprocessed_reads']
+        merged['library_concentration'] = merged['library_concentration'] * read_ratio
 
     # Generate reason column
     merged['reason'] = merged.apply(determine_reason, axis=1)
+
+    # Assign match category (Species Match / Genus Match / Partial Match / mismatch reasons)
+    merged = assign_match_category(merged)
 
     click.echo(f"Converged dataset: {len(merged)} samples")
     click.echo(f"  Missing matching data: {merged['matching'].isna().sum()}")
@@ -215,6 +265,20 @@ def calculate_statistics(df, concentration_col='library_concentration'):
     overall_success = (total_matches / total_samples * 100) if total_samples > 0 else 0
 
     click.echo(f"\nOverall Success Rate: {overall_success:.2f}% ({int(total_matches)}/{total_samples})")
+
+    # Match-type breakdown
+    if 'match_category' in df_valid.columns:
+        matched = df_valid[df_valid['matching'] == 1]
+        if len(matched) > 0:
+            click.echo("\n" + "-" * 80)
+            click.echo("MATCH TYPE BREAKDOWN")
+            click.echo("-" * 80)
+            click.echo(f"\nMatch categories (n={len(matched)}):")
+            for cat_name, _ in MATCH_CATEGORIES:
+                count = (matched['match_category'] == cat_name).sum()
+                if count > 0:
+                    pct = count / len(matched) * 100
+                    click.echo(f"  {cat_name}: {count} ({pct:.1f}%)")
 
     # Failure reason breakdown
     if 'reason' in df_valid.columns:
@@ -320,7 +384,7 @@ def calculate_statistics(df, concentration_col='library_concentration'):
 # Visualisations (6 plots)
 # ---------------------------------------------------------------------------
 
-def create_concentration_boxplot_combined(df, output_dir, concentration_col='library_concentration'):
+def create_concentration_boxplot_combined(df, output_dir, concentration_col='library_concentration', file_suffix=''):
     """Plot 1: Concentration distribution by match status and mismatch reason."""
     click.echo("Creating plot 1: Concentration distribution by match status...")
 
@@ -336,25 +400,12 @@ def create_concentration_boxplot_combined(df, output_dir, concentration_col='lib
     labels = []
     colors_list = []
 
-    full_matches = df_with_conc[(df_with_conc['matching'] == 1) & (df_with_conc['match_type'] == 'full')]
-    if len(full_matches) > 0:
-        conc_data.append(full_matches[concentration_col].values)
-        labels.append(f'Full Match\n(n={len(full_matches)})')
-        colors_list.append(COLORS['full_match'])
-
-    partial_matches = df_with_conc[(df_with_conc['matching'] == 1) & (df_with_conc['match_type'] == 'partial')]
-    if len(partial_matches) > 0:
-        conc_data.append(partial_matches[concentration_col].values)
-        labels.append(f'Partial Match\n(n={len(partial_matches)})')
-        colors_list.append(COLORS['partial_match'])
-
-    mismatches = df_with_conc[df_with_conc['matching'] == 0]
-    for reason, color in MISMATCH_REASONS:
-        reason_samples = mismatches[mismatches['reason'] == reason]
-        if len(reason_samples) > 0:
-            conc_data.append(reason_samples[concentration_col].values)
-            labels.append(f'{reason}\n(n={len(reason_samples)})')
-            colors_list.append(color)
+    for cat_name, cat_color in MATCH_CATEGORIES + MISMATCH_REASONS:
+        cat_samples = df_with_conc[df_with_conc['match_category'] == cat_name]
+        if len(cat_samples) > 0:
+            conc_data.append(cat_samples[concentration_col].values)
+            labels.append(f'{cat_name}\n(n={len(cat_samples)})')
+            colors_list.append(cat_color)
 
     if not conc_data:
         click.echo("  No data to plot")
@@ -382,13 +433,13 @@ def create_concentration_boxplot_combined(df, output_dir, concentration_col='lib
     ax.grid(axis='y', alpha=0.3)
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, "01_concentration_by_status.png")
+    filepath = os.path.join(output_dir, f"01_concentration_by_status{file_suffix}.png")
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     return filepath
 
 
-def create_sample_distribution_combined(df, output_dir):
+def create_sample_distribution_combined(df, output_dir, file_suffix=''):
     """Plot 2: Bar chart showing all sample categories."""
     click.echo("Creating plot 2: Combined sample distribution...")
 
@@ -404,34 +455,12 @@ def create_sample_distribution_combined(df, output_dir):
         counts.append(len(neg_controls))
         colors_list.append(COLORS['negative_control'])
 
-    full_matches = df[(df['matching'] == 1) & (df['match_type'] == 'full')]
-    if len(full_matches) > 0:
-        categories.append('Full\nMatch')
-        counts.append(len(full_matches))
-        colors_list.append(COLORS['full_match'])
-
-    partial_matches = df[(df['matching'] == 1) & (df['match_type'] == 'partial')]
-    if len(partial_matches) > 0:
-        partial_with_genus = partial_matches[partial_matches['genus_match_count'] > 0]
-        partial_without_genus = partial_matches[partial_matches['genus_match_count'] == 0]
-
-        if len(partial_with_genus) > 0:
-            categories.append('Partial Match\n(with genus)')
-            counts.append(len(partial_with_genus))
-            colors_list.append(COLORS['partial_match'])
-
-        if len(partial_without_genus) > 0:
-            categories.append('Partial Match\n(species only)')
-            counts.append(len(partial_without_genus))
-            colors_list.append(COLORS['partial_match_species'])
-
-    mismatches = df[df['matching'] == 0]
-    for reason, color in MISMATCH_REASONS:
-        reason_samples = mismatches[mismatches['reason'] == reason]
-        if len(reason_samples) > 0:
-            categories.append(reason)
-            counts.append(len(reason_samples))
-            colors_list.append(color)
+    for cat_name, cat_color in MATCH_CATEGORIES + MISMATCH_REASONS:
+        cat_samples = df[df['match_category'] == cat_name]
+        if len(cat_samples) > 0:
+            categories.append(cat_name)
+            counts.append(len(cat_samples))
+            colors_list.append(cat_color)
 
     if not counts:
         click.echo("  No data to plot")
@@ -455,13 +484,13 @@ def create_sample_distribution_combined(df, output_dir):
     ax.grid(axis='y', alpha=0.3)
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, "02_sample_distribution.png")
+    filepath = os.path.join(output_dir, f"02_sample_distribution{file_suffix}.png")
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     return filepath
 
 
-def create_species_agreement_plot(df, output_dir):
+def create_species_agreement_plot(df, output_dir, file_suffix=''):
     """Plot 3: Species count scatter plot (successful matches only)."""
     click.echo("Creating plot 3: Species agreement analysis...")
 
@@ -501,13 +530,13 @@ def create_species_agreement_plot(df, output_dir):
     ax.grid(alpha=0.3)
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, "03_species_agreement.png")
+    filepath = os.path.join(output_dir, f"03_species_agreement{file_suffix}.png")
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     return filepath
 
 
-def create_mismatch_reads_plot(df, output_dir):
+def create_mismatch_reads_plot(df, output_dir, file_suffix=''):
     """Plot 4: Read count boxplot by mismatch reason with outlier labels."""
     click.echo("Creating plot 4: Read count distribution by mismatch reason...")
 
@@ -577,13 +606,13 @@ def create_mismatch_reads_plot(df, output_dir):
     ax.grid(axis='y', alpha=0.3)
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, "04_mismatch_reads.png")
+    filepath = os.path.join(output_dir, f"04_mismatch_reads{file_suffix}.png")
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     return filepath
 
 
-def create_reads_by_category_plot(df, output_dir):
+def create_reads_by_category_plot(df, output_dir, file_suffix=''):
     """Plot 7: Read count distribution by match status and mismatch reason."""
     click.echo("Creating plot 7: Read count distribution by category...")
 
@@ -599,25 +628,12 @@ def create_reads_by_category_plot(df, output_dir):
     labels = []
     colors_list = []
 
-    full_matches = df_with_reads[(df_with_reads['matching'] == 1) & (df_with_reads['match_type'] == 'full')]
-    if len(full_matches) > 0:
-        reads_data.append(full_matches['number_of_reads'].values)
-        labels.append(f'Full Match\n(n={len(full_matches)})')
-        colors_list.append(COLORS['full_match'])
-
-    partial_matches = df_with_reads[(df_with_reads['matching'] == 1) & (df_with_reads['match_type'] == 'partial')]
-    if len(partial_matches) > 0:
-        reads_data.append(partial_matches['number_of_reads'].values)
-        labels.append(f'Partial Match\n(n={len(partial_matches)})')
-        colors_list.append(COLORS['partial_match'])
-
-    mismatches = df_with_reads[df_with_reads['matching'] == 0]
-    for reason, color in MISMATCH_REASONS:
-        reason_samples = mismatches[mismatches['reason'] == reason]
-        if len(reason_samples) > 0:
-            reads_data.append(reason_samples['number_of_reads'].values)
-            labels.append(f'{reason}\n(n={len(reason_samples)})')
-            colors_list.append(color)
+    for cat_name, cat_color in MATCH_CATEGORIES + MISMATCH_REASONS:
+        cat_samples = df_with_reads[df_with_reads['match_category'] == cat_name]
+        if len(cat_samples) > 0:
+            reads_data.append(cat_samples['number_of_reads'].values)
+            labels.append(f'{cat_name}\n(n={len(cat_samples)})')
+            colors_list.append(cat_color)
 
     if not reads_data:
         click.echo("  No data to plot")
@@ -645,13 +661,13 @@ def create_reads_by_category_plot(df, output_dir):
     ax.grid(axis='y', alpha=0.3)
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, "07_reads_by_category.png")
+    filepath = os.path.join(output_dir, f"07_reads_by_category{file_suffix}.png")
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     return filepath
 
 
-def create_dilution_test_plot(df, output_dir):
+def create_dilution_test_plot(df, output_dir, file_suffix=''):
     """Plot 5: Dilution test results (1:1 vs 1:10 dilution)."""
     click.echo("Creating plot 5: Dilution test analysis...")
 
@@ -727,18 +743,10 @@ def create_dilution_test_plot(df, output_dir):
 
             if pd.isna(row.get('matching')):
                 color_list.append(COLORS['no_data'])
-            elif row['matching'] == 1:
-                if row.get('match_type') == 'full':
-                    color_list.append(COLORS['full_match'])
-                else:
-                    color_list.append(COLORS['partial_match'])
             else:
-                if row.get('reason') == 'QC Failed':
-                    color_list.append(COLORS['qc_failed'])
-                elif row.get('reason') == 'Inhibition':
-                    color_list.append(COLORS['inhibition'])
-                else:
-                    color_list.append(COLORS['contamination'])
+                cat = row.get('match_category', '')
+                cat_colors = {name: color for name, color in MATCH_CATEGORIES + MISMATCH_REASONS}
+                color_list.append(cat_colors.get(cat, COLORS['no_data']))
 
     if not x_pos:
         click.echo("  No plottable pairs found after filtering")
@@ -774,23 +782,21 @@ def create_dilution_test_plot(df, output_dir):
     ax.set_yticks([])
 
     legend_elements = [
-        Patch(facecolor=COLORS['full_match'], edgecolor='black', label='Full Match', alpha=0.7),
-        Patch(facecolor=COLORS['partial_match'], edgecolor='black', label='Partial Match', alpha=0.7),
-        Patch(facecolor=COLORS['qc_failed'], edgecolor='black', label='QC Failed', alpha=0.7),
-        Patch(facecolor=COLORS['inhibition'], edgecolor='black', label='Inhibition', alpha=0.7),
-        Patch(facecolor=COLORS['contamination'], edgecolor='black', label='Contamination', alpha=0.7),
+        Patch(facecolor=color, edgecolor='black', label=name, alpha=0.7)
+        for name, color in MATCH_CATEGORIES + MISMATCH_REASONS
+    ] + [
         Patch(facecolor=COLORS['no_data'], edgecolor='black', label='No Data', alpha=0.7),
     ]
     ax.legend(handles=legend_elements, loc='upper right', fontsize=10, ncol=2)
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, "05_dilution_test_results.png")
+    filepath = os.path.join(output_dir, f"05_dilution_test_results{file_suffix}.png")
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     return filepath
 
 
-def create_dilution_sample_distribution(df, output_dir):
+def create_dilution_sample_distribution(df, output_dir, file_suffix=''):
     """Plot 6: Stacked bar chart comparing 1:1 vs 1:10 dilution sample counts."""
     click.echo("Creating plot 6: 1:1 vs 1:10 dilution sample distribution...")
 
@@ -827,25 +833,11 @@ def create_dilution_sample_distribution(df, output_dir):
     samples_1_1 = dilution_samples[dilution_samples['dilution'] == '1:1'].copy()
     samples_1_10 = dilution_samples[dilution_samples['dilution'] == '1:10'].copy()
 
-    categories = ['Full Match', 'Partial Match', 'QC Failed', 'Inhibition', 'Contamination']
-    colors_map = {
-        'Full Match': COLORS['full_match'],
-        'Partial Match': COLORS['partial_match'],
-        'QC Failed': COLORS['qc_failed'],
-        'Inhibition': COLORS['inhibition'],
-        'Contamination': COLORS['contamination'],
-    }
+    categories = [name for name, _ in MATCH_CATEGORIES + MISMATCH_REASONS]
+    colors_map = {name: color for name, color in MATCH_CATEGORIES + MISMATCH_REASONS}
 
-    def categorize_sample(row):
-        if pd.isna(row.get('matching')):
-            return None
-        elif row['matching'] == 1:
-            return 'Full Match' if row.get('match_type') == 'full' else 'Partial Match'
-        else:
-            return row.get('reason', 'Unknown')
-
-    samples_1_1['category'] = samples_1_1.apply(categorize_sample, axis=1)
-    samples_1_10['category'] = samples_1_10.apply(categorize_sample, axis=1)
+    samples_1_1['category'] = samples_1_1['match_category']
+    samples_1_10['category'] = samples_1_10['match_category']
 
     samples_1_1 = samples_1_1[samples_1_1['category'].notna()]
     samples_1_10 = samples_1_10[samples_1_10['category'].notna()]
@@ -894,7 +886,51 @@ def create_dilution_sample_distribution(df, output_dir):
     ax.grid(axis='y', alpha=0.3)
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, "06_dilution_sample_distribution.png")
+    filepath = os.path.join(output_dir, f"06_dilution_sample_distribution{file_suffix}.png")
+    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+    plt.close()
+    return filepath
+
+
+def create_reads_removed_vs_concentration_plot(df, output_dir, file_suffix=''):
+    """Plot 8: Proportion of reads removed vs raw library concentration."""
+    click.echo("Creating plot 8: Proportion of reads removed vs concentration...")
+
+    fig, ax = plt.subplots(figsize=(10, 7))
+
+    plot_df = df[df['matching'].notna()].copy()
+    if 'raw_library_concentration' not in plot_df.columns:
+        click.echo("  No raw_library_concentration column available")
+        plt.close()
+        return None
+
+    # Compute proportion of reads removed
+    plot_df['number_of_reads'] = plot_df['number_of_reads'].fillna(0)
+    plot_df = plot_df[
+        (plot_df['unprocessed_reads'].notna()) & (plot_df['unprocessed_reads'] > 0)
+    ]
+    plot_df['proportion_removed'] = 1 - (plot_df['number_of_reads'] / plot_df['unprocessed_reads'])
+
+    plot_df = plot_df[plot_df['raw_library_concentration'].notna()]
+    if len(plot_df) == 0:
+        click.echo("  No data to plot")
+        plt.close()
+        return None
+
+    for cat_name, cat_color in MATCH_CATEGORIES + MISMATCH_REASONS:
+        cat_samples = plot_df[plot_df['match_category'] == cat_name]
+        if len(cat_samples) > 0:
+            ax.scatter(cat_samples['raw_library_concentration'], cat_samples['proportion_removed'],
+                       color=cat_color, label=f'{cat_name} (n={len(cat_samples)})',
+                       alpha=0.6, s=60, edgecolors='black', linewidth=0.5)
+
+    ax.set_xlabel('Library Concentration (ng/uL)', fontsize=12)
+    ax.set_ylabel('Proportion of Reads Removed', fontsize=12)
+    ax.legend(fontsize=10)
+    ax.grid(alpha=0.3)
+
+    plt.tight_layout()
+    filepath = os.path.join(output_dir, f"08_reads_removed_vs_concentration{file_suffix}.png")
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     return filepath
@@ -904,8 +940,8 @@ def create_dilution_sample_distribution(df, output_dir):
 # Orchestrator
 # ---------------------------------------------------------------------------
 
-def run_concentration_analysis(converged_df, output_dir):
-    """Run the full concentration analysis: filter, stats, 6 plots, save CSV.
+def run_concentration_analysis(converged_df, output_dir, file_suffix=''):
+    """Run the full concentration analysis: filter, stats, plots, save CSV.
 
     Parameters
     ----------
@@ -913,6 +949,8 @@ def run_concentration_analysis(converged_df, output_dir):
         Output of build_converged_dataframe().
     output_dir : str
         Directory for output files.
+    file_suffix : str
+        Suffix appended to output filenames (e.g. '_corrected').
     """
     setup_plot_style()
     os.makedirs(output_dir, exist_ok=True)
@@ -949,13 +987,14 @@ def run_concentration_analysis(converged_df, output_dir):
 
     created = []
     for plot_fn in [
-        lambda: create_concentration_boxplot_combined(filtered_df, output_dir),
-        lambda: create_sample_distribution_combined(filtered_df, output_dir),
-        lambda: create_species_agreement_plot(filtered_df, output_dir),
-        lambda: create_mismatch_reads_plot(filtered_df, output_dir),
-        lambda: create_dilution_test_plot(filtered_df, output_dir),
-        lambda: create_dilution_sample_distribution(filtered_df, output_dir),
-        lambda: create_reads_by_category_plot(filtered_df, output_dir),
+        lambda: create_concentration_boxplot_combined(filtered_df, output_dir, file_suffix=file_suffix),
+        lambda: create_sample_distribution_combined(filtered_df, output_dir, file_suffix=file_suffix),
+        lambda: create_species_agreement_plot(filtered_df, output_dir, file_suffix=file_suffix),
+        lambda: create_mismatch_reads_plot(filtered_df, output_dir, file_suffix=file_suffix),
+        lambda: create_dilution_test_plot(filtered_df, output_dir, file_suffix=file_suffix),
+        lambda: create_dilution_sample_distribution(filtered_df, output_dir, file_suffix=file_suffix),
+        lambda: create_reads_by_category_plot(filtered_df, output_dir, file_suffix=file_suffix),
+        lambda: create_reads_removed_vs_concentration_plot(filtered_df, output_dir, file_suffix=file_suffix),
     ]:
         path = plot_fn()
         if path:
