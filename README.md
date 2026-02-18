@@ -1,4 +1,4 @@
-# valkeyrie
+# Valkeyrie
 
 CLI tool for 16S Nanopore sequencing validation analysis. Consolidates four standalone validation scripts into a single pipeline that compares Sanger and Nanopore results, analyses concentration and material effects on sequencing success, and generates statistical reports with visualisations.
 
@@ -30,6 +30,7 @@ valkeyrie validate -i samples.csv -o results/
 | `--material-column` | `material` | Column name for material grouping |
 | `--contamination-material` | `cerebrospinalvätska` | Material type for contamination analysis |
 | `--sequencing-run-id` | `None` | Filter spike analysis to a specific sequencing run ID |
+| `--correct-concentration` | off | Correct library concentration by the ratio of processed to unprocessed reads |
 | `-v`, `--verbose` | off | Enable verbose output |
 
 ### Input CSV format
@@ -53,7 +54,7 @@ All files are written to the directory specified by `-o`.
 - `converged_metadata.csv` - merged dataset with input CSV + MongoDB metadata + Sanger/Nanopore matching results
 - `{contamination_material}_contamination_analysis.csv` - per-sample contamination breakdown for the specified material type
 
-### Concentration analysis plots (6)
+### Concentration analysis plots (9)
 
 1. `01_concentration_by_status.png` - concentration distribution by match status and mismatch reason
 2. `02_sample_distribution.png` - bar chart of all sample categories
@@ -61,6 +62,9 @@ All files are written to the directory specified by `-o`.
 4. `04_mismatch_reads.png` - read count distribution by mismatch reason
 5. `05_dilution_test_results.png` - 1:1 vs 1:10 dilution paired results
 6. `06_dilution_sample_distribution.png` - stacked bar comparing dilution outcomes
+7. `07_reads_by_category.png` - read count distribution by match category (mirrors plot 1 but for reads)
+8. `08_reads_removed_vs_concentration.png` - proportion of reads removed vs raw library concentration, coloured by match category
+9. `09_concentration_vs_reads.png` - library prep concentration vs number of reads, coloured by match category
 
 ### Material analysis plots (10)
 

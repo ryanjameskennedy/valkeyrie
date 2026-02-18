@@ -892,6 +892,40 @@ def create_dilution_sample_distribution(df, output_dir, file_suffix=''):
     return filepath
 
 
+def create_concentration_vs_reads_plot(df, output_dir, file_suffix=''):
+    """Plot 9: Library prep concentration vs number of reads."""
+    click.echo("Creating plot 9: Library prep concentration vs number of reads...")
+
+    fig, ax = plt.subplots(figsize=(10, 7))
+
+    plot_df = df[df['matching'].notna()].copy()
+    plot_df = plot_df[
+        plot_df['raw_library_concentration'].notna() & plot_df['number_of_reads'].notna()
+    ]
+    if len(plot_df) == 0:
+        click.echo("  No data to plot")
+        plt.close()
+        return None
+
+    for cat_name, cat_color in MATCH_CATEGORIES + MISMATCH_REASONS:
+        cat_samples = plot_df[plot_df['match_category'] == cat_name]
+        if len(cat_samples) > 0:
+            ax.scatter(cat_samples['raw_library_concentration'], cat_samples['number_of_reads'],
+                       color=cat_color, label=f'{cat_name} (n={len(cat_samples)})',
+                       alpha=0.6, s=60, edgecolors='black', linewidth=0.5)
+
+    ax.set_xlabel('Library Concentration (ng/uL)', fontsize=12)
+    ax.set_ylabel('Number of Reads', fontsize=12)
+    ax.legend(fontsize=10)
+    ax.grid(alpha=0.3)
+
+    plt.tight_layout()
+    filepath = os.path.join(output_dir, f"09_concentration_vs_reads{file_suffix}.png")
+    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+    plt.close()
+    return filepath
+
+
 def create_reads_removed_vs_concentration_plot(df, output_dir, file_suffix=''):
     """Plot 8: Proportion of reads removed vs raw library concentration."""
     click.echo("Creating plot 8: Proportion of reads removed vs concentration...")
@@ -995,6 +1029,7 @@ def run_concentration_analysis(converged_df, output_dir, file_suffix=''):
         lambda: create_dilution_sample_distribution(filtered_df, output_dir, file_suffix=file_suffix),
         lambda: create_reads_by_category_plot(filtered_df, output_dir, file_suffix=file_suffix),
         lambda: create_reads_removed_vs_concentration_plot(filtered_df, output_dir, file_suffix=file_suffix),
+        lambda: create_concentration_vs_reads_plot(filtered_df, output_dir, file_suffix=file_suffix),
     ]:
         path = plot_fn()
         if path:
