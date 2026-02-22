@@ -54,27 +54,26 @@ All files are written to the directory specified by `-o`.
 - `converged_metadata.csv` - merged dataset with input CSV + MongoDB metadata + Sanger/Nanopore matching results
 - `{contamination_material}_contamination_analysis.csv` - per-sample contamination breakdown for the specified material type
 
-### Concentration analysis plots (9)
+### Concentration analysis plots (8)
 
-1. `01_concentration_by_status.png` - concentration distribution by match status and mismatch reason
+1. `01_reads_removed_by_status.png` - proportion of reads removed by match status and mismatch reason
 2. `02_sample_distribution.png` - bar chart of all sample categories
 3. `03_species_agreement.png` - species count scatter (Sanger vs Nanopore)
 4. `04_mismatch_reads.png` - read count distribution by mismatch reason
 5. `05_dilution_test_results.png` - 1:1 vs 1:10 dilution paired results
 6. `06_dilution_sample_distribution.png` - stacked bar comparing dilution outcomes
-7. `07_reads_by_category.png` - read count distribution by match category (mirrors plot 1 but for reads)
-8. `08_reads_removed_vs_concentration.png` - proportion of reads removed vs raw library concentration, coloured by match category
-9. `09_concentration_vs_reads.png` - library prep concentration vs number of reads, coloured by match category
+7. `07_reads_by_category.png` - read count distribution by match category
+8. `08_reads_removed_vs_reads.png` - proportion of reads removed vs number of reads, coloured by match category
 
 ### Material analysis plots (10)
 
-1. `01_{material}_concentration_boxplot.png` - concentration distribution by material type (with individual data point overlay for n=1 visibility)
+1. `01_{material}_reads_removed_boxplot.png` - proportion of reads removed by material type (with individual data point overlay for n=1 visibility)
 2. `02_{material}_reads_boxplot.png` - read count distribution by material type (with individual data point overlay for n=1 visibility)
 3. `03_{material}_success_rates.png` - success rate bar chart by material
-4. `04_{material}_concentration_vs_reads_bubble.png` - mean concentration vs mean reads bubble plot (size = sample count, colour = success rate)
+4. `04_{material}_reads_removed_vs_reads_bubble.png` - mean proportion of reads removed vs mean reads bubble plot (size = sample count, colour = success rate)
 5. `05_{material}_contamination_heatmap.png` - material vs mismatch reason heatmap
 6. `06_{contamination_material}_contamination_analysis.png` - stacked barplot of contaminant species abundance per sample
-7. `07_{material}_failed_sample_investigation.png` - scatter of reads vs concentration for failed samples (colour = failure reason, marker shape = test type)
+7. `07_{material}_failed_sample_investigation.png` - scatter of reads vs proportion of reads removed for failed samples (colour = failure reason, marker shape = test type)
 8. `08_{material}_multi_species_genus_detection.png` - genus-level detection proportion boxplot for multi-species samples (with individual data point overlay for n=1 visibility)
 9. `09_spike_abundance_boxplot.png` - Agrobacterium fabrum spike abundance (%) boxplot by IC3/IC4 concentration and sample type (Validation vs Negative Control). Optionally filtered by `--sequencing-run-id`.
 10. `10_negative_control_abundance.png` - stacked species abundance barplot for negative control samples (species ≤5% grouped as "Other")

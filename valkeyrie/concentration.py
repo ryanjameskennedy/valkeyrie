@@ -223,6 +223,14 @@ def build_converged_dataframe(input_df, mongo_data, matching_df, correct_concent
     )
     merged['number_of_reads'] = pd.to_numeric(merged['number_of_reads'], errors='coerce')
     merged['unprocessed_reads'] = pd.to_numeric(merged['unprocessed_reads'], errors='coerce')
+
+    with_unprocessed = merged['unprocessed_reads'].notna() & (merged['unprocessed_reads'] > 0)
+    merged['proportion_removed'] = np.where(
+        with_unprocessed,
+        1 - (merged['number_of_reads'] / merged['unprocessed_reads']),
+        np.nan,
+    )
+
     merged['sanger_undetected_count'] = pd.to_numeric(
         merged.get('sanger_undetected_count', 0), errors='coerce'
     )
@@ -384,13 +392,13 @@ def calculate_statistics(df, concentration_col='library_concentration'):
 # Visualisations (6 plots)
 # ---------------------------------------------------------------------------
 
-def create_concentration_boxplot_combined(df, output_dir, concentration_col='library_concentration', file_suffix=''):
-    """Plot 1: Concentration distribution by match status and mismatch reason."""
-    click.echo("Creating plot 1: Concentration distribution by match status...")
+def create_concentration_boxplot_combined(df, output_dir, file_suffix=''):
+    """Plot 1: Proportion of reads removed by match status and mismatch reason."""
+    click.echo("Creating plot 1: Proportion of reads removed by match status...")
 
     fig, ax = plt.subplots(figsize=(14, 7))
 
-    df_with_conc = df[(df[concentration_col].notna()) & (df['matching'].notna())].copy()
+    df_with_conc = df[(df['proportion_removed'].notna()) & (df['matching'].notna())].copy()
     if len(df_with_conc) == 0:
         click.echo("  No data to plot")
         plt.close()
@@ -403,7 +411,7 @@ def create_concentration_boxplot_combined(df, output_dir, concentration_col='lib
     for cat_name, cat_color in MATCH_CATEGORIES + MISMATCH_REASONS:
         cat_samples = df_with_conc[df_with_conc['match_category'] == cat_name]
         if len(cat_samples) > 0:
-            conc_data.append(cat_samples[concentration_col].values)
+            conc_data.append(cat_samples['proportion_removed'].values)
             labels.append(f'{cat_name}\n(n={len(cat_samples)})')
             colors_list.append(cat_color)
 
@@ -429,11 +437,11 @@ def create_concentration_boxplot_combined(df, output_dir, concentration_col='lib
         x_jitter = np.random.default_rng(42).normal(i + 1, 0.04, size=len(data))
         ax.scatter(x_jitter, data, color='black', s=15, alpha=0.4, zorder=3)
 
-    ax.set_ylabel('Library Concentration (ng/uL)', fontsize=12)
+    ax.set_ylabel('Proportion of Reads Removed', fontsize=12)
     ax.grid(axis='y', alpha=0.3)
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, f"01_concentration_by_status{file_suffix}.png")
+    filepath = os.path.join(output_dir, f"01_reads_removed_by_status{file_suffix}.png")
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     return filepath
@@ -892,15 +900,15 @@ def create_dilution_sample_distribution(df, output_dir, file_suffix=''):
     return filepath
 
 
-def create_concentration_vs_reads_plot(df, output_dir, file_suffix=''):
-    """Plot 9: Library prep concentration vs number of reads."""
-    click.echo("Creating plot 9: Library prep concentration vs number of reads...")
+def create_reads_removed_vs_reads_plot(df, output_dir, file_suffix=''):
+    """Plot 8: Proportion of reads removed vs number of reads."""
+    click.echo("Creating plot 8: Proportion of reads removed vs number of reads...")
 
     fig, ax = plt.subplots(figsize=(10, 7))
 
     plot_df = df[df['matching'].notna()].copy()
     plot_df = plot_df[
-        plot_df['raw_library_concentration'].notna() & plot_df['number_of_reads'].notna()
+        plot_df['proportion_removed'].notna() & plot_df['number_of_reads'].notna()
     ]
     if len(plot_df) == 0:
         click.echo("  No data to plot")
@@ -910,61 +918,17 @@ def create_concentration_vs_reads_plot(df, output_dir, file_suffix=''):
     for cat_name, cat_color in MATCH_CATEGORIES + MISMATCH_REASONS:
         cat_samples = plot_df[plot_df['match_category'] == cat_name]
         if len(cat_samples) > 0:
-            ax.scatter(cat_samples['raw_library_concentration'], cat_samples['number_of_reads'],
+            ax.scatter(cat_samples['proportion_removed'], cat_samples['number_of_reads'],
                        color=cat_color, label=f'{cat_name} (n={len(cat_samples)})',
                        alpha=0.6, s=60, edgecolors='black', linewidth=0.5)
 
-    ax.set_xlabel('Library Concentration (ng/uL)', fontsize=12)
+    ax.set_xlabel('Proportion of Reads Removed', fontsize=12)
     ax.set_ylabel('Number of Reads', fontsize=12)
     ax.legend(fontsize=10)
     ax.grid(alpha=0.3)
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, f"09_concentration_vs_reads{file_suffix}.png")
-    plt.savefig(filepath, dpi=300, bbox_inches='tight')
-    plt.close()
-    return filepath
-
-
-def create_reads_removed_vs_concentration_plot(df, output_dir, file_suffix=''):
-    """Plot 8: Proportion of reads removed vs raw library concentration."""
-    click.echo("Creating plot 8: Proportion of reads removed vs concentration...")
-
-    fig, ax = plt.subplots(figsize=(10, 7))
-
-    plot_df = df[df['matching'].notna()].copy()
-    if 'raw_library_concentration' not in plot_df.columns:
-        click.echo("  No raw_library_concentration column available")
-        plt.close()
-        return None
-
-    # Compute proportion of reads removed
-    plot_df['number_of_reads'] = plot_df['number_of_reads'].fillna(0)
-    plot_df = plot_df[
-        (plot_df['unprocessed_reads'].notna()) & (plot_df['unprocessed_reads'] > 0)
-    ]
-    plot_df['proportion_removed'] = 1 - (plot_df['number_of_reads'] / plot_df['unprocessed_reads'])
-
-    plot_df = plot_df[plot_df['raw_library_concentration'].notna()]
-    if len(plot_df) == 0:
-        click.echo("  No data to plot")
-        plt.close()
-        return None
-
-    for cat_name, cat_color in MATCH_CATEGORIES + MISMATCH_REASONS:
-        cat_samples = plot_df[plot_df['match_category'] == cat_name]
-        if len(cat_samples) > 0:
-            ax.scatter(cat_samples['raw_library_concentration'], cat_samples['proportion_removed'],
-                       color=cat_color, label=f'{cat_name} (n={len(cat_samples)})',
-                       alpha=0.6, s=60, edgecolors='black', linewidth=0.5)
-
-    ax.set_xlabel('Library Concentration (ng/uL)', fontsize=12)
-    ax.set_ylabel('Proportion of Reads Removed', fontsize=12)
-    ax.legend(fontsize=10)
-    ax.grid(alpha=0.3)
-
-    plt.tight_layout()
-    filepath = os.path.join(output_dir, f"08_reads_removed_vs_concentration{file_suffix}.png")
+    filepath = os.path.join(output_dir, f"08_reads_removed_vs_reads{file_suffix}.png")
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     return filepath
@@ -1028,8 +992,7 @@ def run_concentration_analysis(converged_df, output_dir, file_suffix=''):
         lambda: create_dilution_test_plot(filtered_df, output_dir, file_suffix=file_suffix),
         lambda: create_dilution_sample_distribution(filtered_df, output_dir, file_suffix=file_suffix),
         lambda: create_reads_by_category_plot(filtered_df, output_dir, file_suffix=file_suffix),
-        lambda: create_reads_removed_vs_concentration_plot(filtered_df, output_dir, file_suffix=file_suffix),
-        lambda: create_concentration_vs_reads_plot(filtered_df, output_dir, file_suffix=file_suffix),
+        lambda: create_reads_removed_vs_reads_plot(filtered_df, output_dir, file_suffix=file_suffix),
     ]:
         path = plot_fn()
         if path:

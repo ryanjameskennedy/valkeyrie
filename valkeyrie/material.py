@@ -212,13 +212,13 @@ def filter_df_for_contamination_analysis(df, mongo_data, contamination_material=
 # ---------------------------------------------------------------------------
 
 def create_material_concentration_boxplot(df, material_stats, material_column, output_dir):
-    """Plot 1: Concentration distribution by material (colored by success rate)."""
-    click.echo("Creating plot 1: Concentration distribution by material...")
+    """Plot 1: Proportion of reads removed by material (colored by success rate)."""
+    click.echo("Creating plot 1: Proportion of reads removed by material...")
 
     fig, ax = plt.subplots(figsize=(14, 7))
 
-    if 'library_concentration' not in df.columns:
-        click.echo("  No concentration data available")
+    if 'proportion_removed' not in df.columns:
+        click.echo("  No proportion_removed data available")
         plt.close()
         return None
 
@@ -229,7 +229,7 @@ def create_material_concentration_boxplot(df, material_stats, material_column, o
     conc_labels = []
 
     for material in materials_ordered:
-        material_data = df[df[material_column] == material]['library_concentration'].dropna()
+        material_data = df[df[material_column] == material]['proportion_removed'].dropna()
         if len(material_data) > 0:
             conc_data.append(material_data.values)
             conc_labels.append(material)
@@ -264,12 +264,12 @@ def create_material_concentration_boxplot(df, material_stats, material_column, o
     cbar.set_label('Success Rate (%)', fontsize=10)
 
     ax.set_xlabel(material_column.replace('_', ' ').title(), fontsize=12)
-    ax.set_ylabel('Library Concentration (ng/uL)', fontsize=12)
+    ax.set_ylabel('Proportion of Reads Removed', fontsize=12)
     ax.set_xticklabels(conc_labels, rotation=45, ha='right')
     ax.grid(axis='y', alpha=0.3)
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, f"01_{material_column}_concentration_boxplot.png")
+    filepath = os.path.join(output_dir, f"01_{material_column}_reads_removed_boxplot.png")
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     return filepath
@@ -378,8 +378,8 @@ def create_material_success_rates(df, material_stats, material_column, output_di
 
 
 def create_material_bubble_plot(df, material_stats, material_column, output_dir):
-    """Plot 4: Bubble plot of mean concentration vs mean reads by material."""
-    click.echo("Creating plot 4: Mean concentration vs mean read count bubble plot...")
+    """Plot 4: Bubble plot of mean proportion removed vs mean reads by material."""
+    click.echo("Creating plot 4: Mean proportion of reads removed vs mean read count bubble plot...")
 
     if 'number_of_reads' not in df.columns:
         click.echo("  No read count data available")
@@ -389,7 +389,7 @@ def create_material_bubble_plot(df, material_stats, material_column, output_dir)
 
     material_stats_sorted = sorted(material_stats, key=lambda x: x['success_rate'], reverse=True)
 
-    mean_concs = []
+    mean_props = []
     mean_reads = []
     success_rates = []
     labels = []
@@ -398,24 +398,24 @@ def create_material_bubble_plot(df, material_stats, material_column, output_dir)
     for info in material_stats_sorted:
         material = info['material']
         material_df = df[df[material_column] == material]
-        mean_conc = material_df['library_concentration'].mean()
+        mean_prop_removed = material_df['proportion_removed'].mean()
         mean_read = material_df['number_of_reads'].mean()
 
-        if not pd.isna(mean_conc) and not pd.isna(mean_read):
-            mean_concs.append(mean_conc)
+        if not pd.isna(mean_prop_removed) and not pd.isna(mean_read):
+            mean_props.append(mean_prop_removed)
             mean_reads.append(mean_read)
             success_rates.append(info['success_rate'])
             labels.append(material)
             ns.append(info['n'])
 
-    if not mean_concs:
+    if not mean_props:
         click.echo("  No data to plot")
         plt.close()
         return None
 
     sizes = 100 + np.array(ns) ** 2 * 30
 
-    scatter = ax.scatter(mean_concs, mean_reads,
+    scatter = ax.scatter(mean_props, mean_reads,
                          s=sizes, alpha=0.6, linewidth=0,
                          c=success_rates, cmap='RdYlGn', vmin=0, vmax=100)
 
@@ -423,11 +423,11 @@ def create_material_bubble_plot(df, material_stats, material_column, output_dir)
 
     texts = []
     for i, label in enumerate(labels):
-        texts.append(ax.text(mean_concs[i], mean_reads[i], label,
+        texts.append(ax.text(mean_props[i], mean_reads[i], label,
                              fontsize=9, alpha=0.7))
     adjust_text(texts, ax=ax)
 
-    ax.set_xlabel('Mean Library Concentration (ng/\u00b5L)', fontsize=12)
+    ax.set_xlabel('Mean Proportion of Reads Removed', fontsize=12)
     ax.set_ylabel('Mean Number of Reads', fontsize=12)
     ax.grid(alpha=0.3)
 
@@ -438,7 +438,7 @@ def create_material_bubble_plot(df, material_stats, material_column, output_dir)
     cbar.set_label('Success Rate (%)', fontsize=10)
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, f"04_{material_column}_concentration_vs_reads_bubble.png")
+    filepath = os.path.join(output_dir, f"04_{material_column}_reads_removed_vs_reads_bubble.png")
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     return filepath
@@ -617,7 +617,7 @@ def create_failed_sample_investigation(df, material_column, output_dir):
             ]
             if len(subset) == 0:
                 continue
-            ax.scatter(subset['number_of_reads'], subset['library_concentration'],
+            ax.scatter(subset['number_of_reads'], subset['proportion_removed'],
                        s=80, alpha=0.7, color=reason_palette[reason],
                        marker=test_markers[test], edgecolors='white', linewidth=0.5)
 
@@ -625,12 +625,12 @@ def create_failed_sample_investigation(df, material_column, output_dir):
     from adjustText import adjust_text
     texts = []
     for _, row in mismatches.iterrows():
-        texts.append(ax.text(row['number_of_reads'], row['library_concentration'],
+        texts.append(ax.text(row['number_of_reads'], row['proportion_removed'],
                              row[material_column], fontsize=7, alpha=0.7))
     adjust_text(texts, ax=ax)
 
     ax.set_xlabel('Number of Reads', fontsize=12)
-    ax.set_ylabel('Library Concentration (ng/\u00b5L)', fontsize=12)
+    ax.set_ylabel('Proportion of Reads Removed', fontsize=12)
     from matplotlib.lines import Line2D
     color_handles = [Line2D([0], [0], marker='o', color='w', markerfacecolor=c,
                             markersize=8, label=r)
