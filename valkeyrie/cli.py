@@ -35,8 +35,9 @@ def cli():
               help='MongoDB collection name')
 @click.option('--material-column', default='material',
               help='Column name for material grouping in material analysis')
-@click.option('--contamination-material', default='cerebrospinalvätska',
-              help='Specific material type for contamination analysis')
+@click.option('--contamination-material', multiple=True,
+              default=('cerebrospinalvätska','pleuravätska'),
+              help='Material type(s) for contamination analysis (repeat flag for multiple)')
 @click.option('--sequencing-run-id', default=None,
               help='Filter spike analysis to a specific sequencing run ID')
 @click.option('--correct-concentration', is_flag=True,
@@ -121,7 +122,7 @@ def validate(input_csv, output_dir, mongo_uri, mongo_db, mongo_collection,
     run_material_analysis(
         filtered_df, mongo_data, output_dir,
         material_column=material_column,
-        contamination_material=contamination_material,
+        contamination_materials=contamination_material,
         full_df=converged_df,
         sequencing_run_id=sequencing_run_id,
     )

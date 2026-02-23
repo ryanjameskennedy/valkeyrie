@@ -28,7 +28,7 @@ valkeyrie validate -i samples.csv -o results/
 | `--mongo-db` | `eyrie` | MongoDB database name |
 | `--mongo-collection` | `samples` | MongoDB collection name |
 | `--material-column` | `material` | Column name for material grouping |
-| `--contamination-material` | `cerebrospinalvätska` | Material type for contamination analysis |
+| `--contamination-material` | `cerebrospinalvätska` | Material type(s) for contamination analysis; repeat flag for multiple values |
 | `--sequencing-run-id` | `None` | Filter spike analysis to a specific sequencing run ID |
 | `--correct-concentration` | off | Correct library concentration by the ratio of processed to unprocessed reads |
 | `-v`, `--verbose` | off | Enable verbose output |
@@ -52,7 +52,7 @@ All files are written to the directory specified by `-o`.
 ### CSVs
 
 - `converged_metadata.csv` - merged dataset with input CSV + MongoDB metadata + Sanger/Nanopore matching results
-- `{contamination_material}_contamination_analysis.csv` - per-sample contamination breakdown for the specified material type
+- `{contamination_material}_contamination_analysis.csv` - per-sample contamination breakdown; one file per `--contamination-material` value
 
 ### Concentration analysis plots (8)
 
@@ -72,11 +72,11 @@ All files are written to the directory specified by `-o`.
 3. `03_{material}_success_rates.png` - success rate bar chart by material
 4. `04_{material}_reads_removed_vs_reads_bubble.png` - mean proportion of reads removed vs mean reads bubble plot (size = sample count, colour = success rate)
 5. `05_{material}_contamination_heatmap.png` - material vs mismatch reason heatmap
-6. `06_{contamination_material}_contamination_analysis.png` - stacked barplot of contaminant species abundance per sample
+6. `06_{contamination_material}_contamination_analysis.png` - stacked barplot of contaminant species abundance per sample; one plot generated per `--contamination-material` value
 7. `07_{material}_failed_sample_investigation.png` - scatter of reads vs proportion of reads removed for failed samples (colour = failure reason, marker shape = test type)
 8. `08_{material}_multi_species_genus_detection.png` - genus-level detection proportion boxplot for multi-species samples (with individual data point overlay for n=1 visibility)
 9. `09_spike_abundance_boxplot.png` - Agrobacterium fabrum spike abundance (%) boxplot by IC3/IC4 concentration and sample type (Validation vs Negative Control). Optionally filtered by `--sequencing-run-id`.
-10. `10_negative_control_abundance.png` - stacked species abundance barplot for negative control samples (species ≤5% grouped as "Other")
+10. `10_negative_control_abundance.png` - stacked species abundance barplot for negative control samples (species ≤5% grouped as "Other"); total estimated read counts annotated on top of each bar
 
 ## Integration with eyrie-popup
 

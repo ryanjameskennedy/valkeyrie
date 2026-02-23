@@ -889,13 +889,17 @@ def create_negative_control_abundance_barplot(full_df, mongo_data, output_dir):
     # Collect species abundance per sample, applying 5% threshold
     sample_ids = df['sample_id'].values
     per_sample = []  # list of dicts: {species: abundance}
+    estimated_counts_totals = []
 
     for sid in sample_ids:
         doc = mongo_data.get(sid)
         if not doc:
             per_sample.append({})
+            estimated_counts_totals.append(0)
             continue
         hits = doc.get('taxonomic_data', {}).get('hits', [])
+        total_est = sum(float(hit.get('estimated_counts', 0) or 0) for hit in hits)
+        estimated_counts_totals.append(total_est)
         species_dict = {}
         other_total = 0.0
         for hit in hits:
@@ -960,6 +964,11 @@ def create_negative_control_abundance_barplot(full_df, mongo_data, output_dir):
                linewidth=0.3, label=species)
         bottoms += values
 
+    for i, total_est in enumerate(estimated_counts_totals):
+        if total_est > 0:
+            ax.text(x[i], bottoms[i] + 0.5, f'{int(total_est):,}',
+                    ha='center', va='bottom', fontsize=7)
+
     ax.set_xticks(x)
     ax.set_xticklabels(sample_ids, rotation=90, fontsize=8)
     ax.set_xlabel('Sample', fontsize=12)
@@ -984,7 +993,7 @@ def create_negative_control_abundance_barplot(full_df, mongo_data, output_dir):
 
 def run_material_analysis(converged_df, mongo_data, output_dir,
                           material_column='material',
-                          contamination_material='cerebrospinalvätska',
+                          contamination_materials=('cerebrospinalvätska','pleuravätska'),
                           full_df=None,
                           sequencing_run_id=None):
     """Run the full material analysis: filter, stats, 10 plots, save CSV.
@@ -999,8 +1008,8 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
         Directory for output files.
     material_column : str
         Column name for material grouping.
-    contamination_material : str
-        Specific material type for contamination analysis.
+    contamination_materials : tuple or list of str
+        Material type(s) for contamination analysis; one plot and CSV per material.
     full_df : DataFrame, optional
         Unfiltered converged DataFrame (includes controls) for spike analysis.
     sequencing_run_id : str, optional
@@ -1021,13 +1030,6 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
 
     # Statistics
     material_stats, material_counts = calculate_material_statistics(df, material_column=material_column)
-
-    # Contamination analysis
-    contamination_df = filter_df_for_contamination_analysis(
-        df, mongo_data,
-        contamination_material=contamination_material,
-        material_column=material_column,
-    )
 
     # Visualisations
     click.echo("\nGenerating visualisations...")
@@ -1053,9 +1055,29 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
     if filepath:
         created.append(filepath)
 
-    filepath = create_material_contamination_plot(contamination_df, output_dir, contamination_material)
-    if filepath:
-        created.append(filepath)
+    # Contamination analysis — one plot + CSV per material
+    for contamination_material in contamination_materials:
+        contamination_df = filter_df_for_contamination_analysis(
+            df, mongo_data,
+            contamination_material=contamination_material,
+            material_column=material_column,
+        )
+
+        filepath = create_material_contamination_plot(
+            contamination_df, output_dir, contamination_material
+        )
+        if filepath:
+            created.append(filepath)
+
+        if contamination_df is not None:
+            contamination_output = os.path.join(
+                output_dir, f'{contamination_material}_contamination_analysis.csv'
+            )
+            contamination_df.to_csv(contamination_output, index=False)
+            click.echo(
+                f"\n{contamination_material.upper()} contamination data saved to "
+                f"{contamination_output}"
+            )
 
     filepath = create_failed_sample_investigation(df, material_column, output_dir)
     if filepath:
@@ -1076,11 +1098,3 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
     click.echo(f"\nCreated {len(created)} visualisation files:")
     for fp in created:
         click.echo(f"  - {os.path.basename(fp)}")
-
-    # Save contamination data
-    if contamination_df is not None:
-        contamination_output = os.path.join(
-            output_dir, f'{contamination_material}_contamination_analysis.csv'
-        )
-        contamination_df.to_csv(contamination_output, index=False)
-        click.echo(f"\n{contamination_material.upper()} contamination data saved to {contamination_output}")
