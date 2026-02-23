@@ -474,8 +474,7 @@ def create_contamination_heatmap(df, material_column, output_dir):
     return filepath
 
 
-def create_material_contamination_plot(contamination_df, output_dir,
-                                       contamination_material='cerebrospinalvatska'):
+def create_material_contamination_plot(contamination_df, output_dir):
     """Plot 6: Stacked barplot of contaminant species abundance per sample."""
     click.echo("Creating plot 6: Contamination analysis...")
 
@@ -483,8 +482,10 @@ def create_material_contamination_plot(contamination_df, output_dir,
         click.echo("  No contamination data available")
         return None
 
-    # Sort samples by sequencing_run_id so runs are grouped together
-    contamination_df = contamination_df.sort_values('sequencing_run_id')
+    # Sort samples by material first, then by sequencing_run_id within each material
+    contamination_df = contamination_df.sort_values(
+        ['contamination_material', 'sequencing_run_id']
+    )
 
     # Collect all unique contaminant species and build a read-count matrix
     all_species = set()
@@ -530,6 +531,13 @@ def create_material_contamination_plot(contamination_df, output_dir,
                linewidth=0.3, label=species)
         bottoms += values
 
+    # Annotate each bar with its material name
+    materials_col = contamination_df['contamination_material'].values
+    ylim_top = ax.get_ylim()[1]
+    for i, mat in enumerate(materials_col):
+        ax.text(x[i], bottoms[i] + ylim_top * 0.01, mat,
+                ha='center', va='bottom', fontsize=6, rotation=90, color='#444444')
+
     ax.set_xticks(x)
     ax.set_xticklabels(sample_names, rotation=90, fontsize=8)
     ax.set_xlabel('Sample', fontsize=12)
@@ -561,7 +569,7 @@ def create_material_contamination_plot(contamination_df, output_dir,
     )
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, f"06_{contamination_material}_contamination_analysis.png")
+    filepath = os.path.join(output_dir, "06_contamination_analysis.png")
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     return filepath
@@ -1055,29 +1063,29 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
     if filepath:
         created.append(filepath)
 
-    # Contamination analysis — one plot + CSV per material
+    # Contamination analysis — collect per-material DataFrames then combine into one plot + CSV
+    combined_parts = []
     for contamination_material in contamination_materials:
         contamination_df = filter_df_for_contamination_analysis(
             df, mongo_data,
             contamination_material=contamination_material,
             material_column=material_column,
         )
+        if contamination_df is not None:
+            contamination_df = contamination_df.copy()
+            contamination_df['contamination_material'] = contamination_material
+            combined_parts.append(contamination_df)
 
-        filepath = create_material_contamination_plot(
-            contamination_df, output_dir, contamination_material
-        )
+    if combined_parts:
+        combined_contamination_df = pd.concat(combined_parts, ignore_index=True)
+
+        filepath = create_material_contamination_plot(combined_contamination_df, output_dir)
         if filepath:
             created.append(filepath)
 
-        if contamination_df is not None:
-            contamination_output = os.path.join(
-                output_dir, f'{contamination_material}_contamination_analysis.csv'
-            )
-            contamination_df.to_csv(contamination_output, index=False)
-            click.echo(
-                f"\n{contamination_material.upper()} contamination data saved to "
-                f"{contamination_output}"
-            )
+        contamination_output = os.path.join(output_dir, 'contamination_analysis.csv')
+        combined_contamination_df.to_csv(contamination_output, index=False)
+        click.echo(f"\nContamination data saved to {contamination_output}")
 
     filepath = create_failed_sample_investigation(df, material_column, output_dir)
     if filepath:
