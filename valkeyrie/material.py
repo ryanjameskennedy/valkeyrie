@@ -738,14 +738,18 @@ def create_multi_species_genus_detection(df, material_column, output_dir):
     return filepath
 
 
-def create_spike_abundance_boxplot(full_df, mongo_data, output_dir, sequencing_run_id=None):
-    """Plot 9: Spike (Agrobacterium fabrum) abundance by IC3/IC4 and sample type.
+def create_spike_abundance_boxplot(full_df, mongo_data, output_dir,
+                                   sequencing_run_id=None, metric='abundance'):
+    """Plot 9/9b: Spike (Agrobacterium fabrum) abundance or estimated counts by IC3/IC4 and sample type.
 
     Creates a 4-box boxplot comparing Agrobacterium fabrum abundance (%)
-    across Validation IC3, Validation IC4, Negative Control IC3, and
-    Negative Control IC4.
+    or estimated counts across Validation IC3, Validation IC4,
+    Negative Control IC3, and Negative Control IC4.
     """
-    click.echo("Creating plot 9: Spike abundance boxplot...")
+    if metric == 'estimated_counts':
+        click.echo("Creating plot 9b: Spike estimated counts boxplot...")
+    else:
+        click.echo("Creating plot 9: Spike abundance boxplot...")
 
     if full_df is None or 'spike_concentration' not in full_df.columns:
         click.echo("  No spike concentration data available")
@@ -785,18 +789,20 @@ def create_spike_abundance_boxplot(full_df, mongo_data, output_dir, sequencing_r
             click.echo(f"  Excluded {excluded} QC-failed samples")
         df = df[~qc_mask]
 
-    # Look up Agrobacterium fabrum abundance from mongo_data
-    def _get_spike_abundance(sample_id):
+    # Look up Agrobacterium fabrum value from mongo_data
+    _METRIC_FIELD = 'estimated_counts' if metric == 'estimated_counts' else 'abundance'
+
+    def _get_spike_value(sample_id):
         doc = mongo_data.get(sample_id)
         if not doc:
             return 0.0
         hits = doc.get('taxonomic_data', {}).get('hits', [])
         for hit in hits:
             if hit.get('species', '').lower() == 'agrobacterium fabrum':
-                return float(hit.get('abundance', 0))
+                return float(hit.get(_METRIC_FIELD, 0) or 0)
         return 0.0
 
-    df['spike_abundance'] = df['sample_id'].apply(_get_spike_abundance)
+    df['spike_value'] = df['sample_id'].apply(_get_spike_value)
 
     # Build the 4 groups
     group_defs = [
@@ -812,7 +818,7 @@ def create_spike_abundance_boxplot(full_df, mongo_data, output_dir, sequencing_r
 
     for label, group, conc in group_defs:
         subset = df[(df['sample_group'] == group) & (df['spike_concentration'] == conc)]
-        values = subset['spike_abundance'].values
+        values = subset['spike_value'].values
         box_data.append(values)
         box_labels.append(label)
         box_counts.append(len(values))
@@ -822,12 +828,17 @@ def create_spike_abundance_boxplot(full_df, mongo_data, output_dir, sequencing_r
         click.echo("  No data in any spike group")
         return None
 
-    # Print spike abundance summary
+    # Print spike value summary
     for label, data in zip(box_labels, box_data):
         if len(data) > 0:
-            click.echo(f"  {label.replace(chr(10), ' ')}: n={len(data)}, "
-                       f"min={np.min(data):.2f}%, max={np.max(data):.2f}%, "
-                       f"median={np.median(data):.2f}%, mean={np.mean(data):.2f}%")
+            if metric == 'estimated_counts':
+                click.echo(f"  {label.replace(chr(10), ' ')}: n={len(data)}, "
+                           f"min={np.min(data):.0f}, max={np.max(data):.0f}, "
+                           f"median={np.median(data):.0f}, mean={np.mean(data):.0f}")
+            else:
+                click.echo(f"  {label.replace(chr(10), ' ')}: n={len(data)}, "
+                           f"min={np.min(data):.2f}%, max={np.max(data):.2f}%, "
+                           f"median={np.median(data):.2f}%, mean={np.mean(data):.2f}%")
         else:
             click.echo(f"  {label.replace(chr(10), ' ')}: n=0")
 
@@ -857,14 +868,20 @@ def create_spike_abundance_boxplot(full_df, mongo_data, output_dir, sequencing_r
             ax.scatter(x_jitter, data, color='black', s=15, alpha=0.4, zorder=3)
 
     # Add sample count annotations above each box
+    y_top = max((np.max(d) for d in box_data if len(d) > 0), default=0)
     for i, n in enumerate(box_counts):
-        ax.text(i + 1, 100, f'n={n}', ha='center', va='bottom', fontsize=9, fontstyle='italic')
+        ax.text(i + 1, y_top, f'n={n}', ha='center', va='bottom', fontsize=9, fontstyle='italic')
 
-    ax.set_ylabel('Abundance (%)', fontsize=12)
+    ylabel = 'Estimated Counts' if metric == 'estimated_counts' else 'Abundance (%)'
+    ax.set_ylabel(ylabel, fontsize=12)
     ax.grid(axis='y', alpha=0.3)
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, "09_spike_abundance_boxplot.png")
+    if metric == 'estimated_counts':
+        filename = "09b_spike_estimated_counts_boxplot.png"
+    else:
+        filename = "09_spike_abundance_boxplot.png"
+    filepath = os.path.join(output_dir, filename)
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     return filepath
@@ -1207,7 +1224,17 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
     if filepath:
         created.append(filepath)
 
-    filepath = create_spike_abundance_boxplot(full_df, mongo_data, output_dir, sequencing_run_id=sequencing_run_id)
+    # Plot 9: spike abundance
+    filepath = create_spike_abundance_boxplot(full_df, mongo_data, output_dir,
+                                              sequencing_run_id=sequencing_run_id,
+                                              metric='abundance')
+    if filepath:
+        created.append(filepath)
+
+    # Plot 9b: spike estimated counts
+    filepath = create_spike_abundance_boxplot(full_df, mongo_data, output_dir,
+                                              sequencing_run_id=sequencing_run_id,
+                                              metric='estimated_counts')
     if filepath:
         created.append(filepath)
 
