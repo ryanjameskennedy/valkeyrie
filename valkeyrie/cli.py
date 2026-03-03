@@ -112,7 +112,7 @@ def validate(input_csv, output_dir, mongo_uri, mongo_db, mongo_collection,
 
     file_suffix = '_corrected' if correct_concentration else ''
     filtered_df = run_concentration_analysis(converged_df, output_dir,
-                                             file_suffix=file_suffix)
+                                             file_suffix=file_suffix, verbose=verbose)
 
     # 6. Run material analysis (saves 5 plots + contamination CSV)
     click.echo("\n" + "=" * 80)

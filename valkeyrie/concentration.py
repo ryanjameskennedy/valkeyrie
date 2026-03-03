@@ -12,7 +12,7 @@ import pandas as pd
 from scipy import stats
 
 from .plots import COLORS, MATCH_CATEGORIES, MISMATCH_REASONS, setup_plot_style
-from .stats import create_concentration_bins
+from .stats import create_concentration_bins, classify_sanger_species
 
 import matplotlib
 matplotlib.use('Agg')
@@ -328,6 +328,8 @@ def build_converged_dataframe(input_df, mongo_data, matching_df, correct_concent
     # Assign match category (Species Match / Genus Match / Partial Match / mismatch reasons)
     merged = assign_match_category(merged)
 
+    merged['sanger_species_type'] = merged['sanger_expected_species'].apply(classify_sanger_species)
+
     click.echo(f"Converged dataset: {len(merged)} samples")
     click.echo(f"  Missing matching data: {merged['matching'].isna().sum()}")
 
@@ -465,6 +467,75 @@ def calculate_statistics(df, concentration_col='library_concentration'):
             click.echo("Result: No significant association between concentration range and success (p >= 0.05)")
 
     return valid_data, bin_stats
+
+
+_SPECIES_TYPE_ORDER = ['Species Level', 'Genus Level', 'Polymicrobial', 'Unknown']
+_SPECIES_TYPE_COLORS = {
+    'Species Level': '#44aa44',
+    'Genus Level':   '#4169e1',
+    'Polymicrobial': '#E07B39',
+    'Unknown':       '#808080',
+}
+
+
+def print_sanger_species_summary(df, verbose=False):
+    """Print counts of sanger_species_type categories; with verbose, list each sample."""
+    if 'sanger_species_type' not in df.columns:
+        return
+
+    click.echo("\n" + "-" * 80)
+    click.echo("SANGER EXPECTED SPECIES CLASSIFICATION")
+    click.echo("-" * 80)
+
+    counts = df['sanger_species_type'].value_counts()
+    total = len(df)
+    for cat in _SPECIES_TYPE_ORDER:
+        n = counts.get(cat, 0)
+        if n > 0:
+            click.echo(f"  {cat}: {n} ({n / total * 100:.1f}%)")
+
+    if verbose:
+        click.echo("\n  Per-sample classification:")
+        for _, row in df.sort_values('sample_id').iterrows():
+            click.echo(
+                f"    {row['sample_id']}: {row['sanger_species_type']}"
+                f"  ({row.get('sanger_expected_species', '')})"
+            )
+
+
+def create_sanger_species_barplot(df, output_dir, file_suffix=''):
+    """Plot Xb: Bar chart of sanger expected species classification counts."""
+    click.echo("Creating sanger species type barplot...")
+    if 'sanger_species_type' not in df.columns:
+        click.echo("  No sanger_species_type column available")
+        return None
+
+    categories = [c for c in _SPECIES_TYPE_ORDER if (df['sanger_species_type'] == c).any()]
+    counts = [int((df['sanger_species_type'] == c).sum()) for c in categories]
+    colors = [_SPECIES_TYPE_COLORS[c] for c in categories]
+
+    if not counts:
+        click.echo("  No data to plot")
+        return None
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+    bars = ax.bar(range(len(categories)), counts, color=colors,
+                  alpha=0.8, edgecolor='black', linewidth=1.5)
+    total = len(df)
+    for bar, count in zip(bars, counts):
+        height = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width() / 2., height + 0.3,
+                f'{count}\n({count / total * 100:.1f}%)',
+                ha='center', va='bottom', fontsize=10, fontweight='bold')
+    ax.set_xticks(range(len(categories)))
+    ax.set_xticklabels(categories, fontsize=11)
+    ax.set_ylabel('Number of Samples', fontsize=12)
+    ax.grid(axis='y', alpha=0.3)
+    plt.tight_layout()
+    filepath = os.path.join(output_dir, f"00_sanger_species_types{file_suffix}.png")
+    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+    plt.close()
+    return filepath
 
 
 # ---------------------------------------------------------------------------
@@ -899,7 +970,7 @@ def create_reads_removed_vs_reads_plot(df, output_dir, file_suffix=''):
 # Orchestrator
 # ---------------------------------------------------------------------------
 
-def run_concentration_analysis(converged_df, output_dir, file_suffix=''):
+def run_concentration_analysis(converged_df, output_dir, file_suffix='', verbose=False):
     """Run the full concentration analysis: filter, stats, plots, save CSV.
 
     Parameters
@@ -939,6 +1010,7 @@ def run_concentration_analysis(converged_df, output_dir, file_suffix=''):
 
     # Statistics
     valid_data, bin_stats = calculate_statistics(filtered_df)
+    print_sanger_species_summary(filtered_df, verbose=verbose)
 
     # Visualisations
     click.echo("\nGenerating visualisations...")
@@ -946,6 +1018,7 @@ def run_concentration_analysis(converged_df, output_dir, file_suffix=''):
 
     created = []
     for plot_fn in [
+        lambda: create_sanger_species_barplot(filtered_df, output_dir, file_suffix=file_suffix),
         lambda: create_concentration_boxplot_combined(filtered_df, output_dir, file_suffix=file_suffix),
         lambda: create_concentration_by_status_plot(filtered_df, output_dir, file_suffix=file_suffix),
         lambda: create_sample_distribution_combined(filtered_df, output_dir, file_suffix=file_suffix),

@@ -22,6 +22,27 @@ def parse_species_list(species_str):
     return [species_str.strip()]
 
 
+def classify_sanger_species(species_str):
+    """Classify a sanger_expected_species string.
+
+    Returns one of: 'Polymicrobial', 'Genus Level', 'Species Level', 'Unknown'.
+    """
+    if pd.isna(species_str) or not str(species_str).strip():
+        return 'Unknown'
+
+    parts = [s.strip() for s in str(species_str).split(';') if s.strip()]
+    if len(parts) > 1:
+        return 'Polymicrobial'
+
+    tokens = parts[0].split(' ')
+    if tokens[-1].lower() == 'complex':
+        return 'Genus Level'
+    if len(tokens) == 2 and tokens[-1] in ('sp.', 'spp.'):
+        return 'Genus Level'
+
+    return 'Species Level'
+
+
 def create_concentration_bins(df, concentration_col='library_concentration', bin_width=5):
     """Create fixed-width concentration bins for analysis.
 
