@@ -912,10 +912,11 @@ def create_negative_control_abundance_barplot(full_df, mongo_data, output_dir):
         estimated_counts_totals.append(total_est)
         species_dict = {}
         other_total = 0.0
+        _SPIKE = 'agrobacterium fabrum'
         for hit in hits:
             species = hit.get('species', 'Unknown')
             abundance = float(hit.get('abundance', 0))
-            if abundance > 5.0:
+            if abundance > 5.0 or species.lower() == _SPIKE:
                 species_dict[species] = abundance
             else:
                 other_total += abundance
