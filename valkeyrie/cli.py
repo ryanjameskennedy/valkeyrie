@@ -40,12 +40,15 @@ def cli():
               help='Material type(s) for contamination analysis (repeat flag for multiple)')
 @click.option('--sequencing-run-id', default=None,
               help='Filter spike analysis to a specific sequencing run ID')
+@click.option('--max-reads', default=5000, show_default=True, type=int,
+              help='Cap for reads-axis in affected plots; samples above this threshold '
+                   'are excluded from plot 11.')
 @click.option('--correct-concentration', is_flag=True,
               help='Correct library concentration by the ratio of processed to unprocessed reads')
 @click.option('-v', '--verbose', is_flag=True,
               help='Enable verbose output')
 def validate(input_csv, output_dir, mongo_uri, mongo_db, mongo_collection,
-             material_column, contamination_material, sequencing_run_id,
+             material_column, contamination_material, sequencing_run_id, max_reads,
              correct_concentration, verbose):
     """Run full 16S validation pipeline.
 
@@ -112,7 +115,8 @@ def validate(input_csv, output_dir, mongo_uri, mongo_db, mongo_collection,
 
     file_suffix = '_corrected' if correct_concentration else ''
     filtered_df = run_concentration_analysis(converged_df, output_dir,
-                                             file_suffix=file_suffix, verbose=verbose)
+                                             file_suffix=file_suffix, verbose=verbose,
+                                             max_reads=max_reads)
 
     # 6. Run material analysis (saves 5 plots + contamination CSV)
     click.echo("\n" + "=" * 80)
@@ -125,6 +129,7 @@ def validate(input_csv, output_dir, mongo_uri, mongo_db, mongo_collection,
         contamination_materials=contamination_material,
         full_df=converged_df,
         sequencing_run_id=sequencing_run_id,
+        max_reads=max_reads,
     )
 
     click.echo("\n" + "=" * 80)

@@ -24,7 +24,7 @@ import seaborn as sns
 _SINGLE_COLOR = '#44aa44'  # uniform green for non-status-encoded plots
 
 
-def _create_status_boxplot(df, column, ylabel, filepath):
+def _create_status_boxplot(df, column, ylabel, filepath, ylim=None):
     """Shared boxplot of `column` split by match_category, coloured uniformly."""
     df_plot = df[(df[column].notna()) & (df['matching'].notna())].copy()
     if len(df_plot) == 0:
@@ -58,6 +58,8 @@ def _create_status_boxplot(df, column, ylabel, filepath):
         ax.scatter(x_jitter, d, color='black', s=15, alpha=0.4, zorder=3)
     ax.set_ylabel(ylabel, fontsize=12)
     ax.grid(axis='y', alpha=0.3)
+    if ylim is not None:
+        ax.set_ylim(*ylim)
     plt.tight_layout()
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
@@ -608,7 +610,7 @@ def create_species_agreement_plot(df, output_dir, file_suffix=''):
     return filepath
 
 
-def create_mismatch_reads_plot(df, output_dir, file_suffix=''):
+def create_mismatch_reads_plot(df, output_dir, file_suffix='', max_reads=5000):
     """Plot 4: Read count boxplot by mismatch reason with outlier labels."""
     click.echo("Creating plot 4: Read count distribution by mismatch reason...")
 
@@ -676,19 +678,21 @@ def create_mismatch_reads_plot(df, output_dir, file_suffix=''):
 
     ax.set_ylabel('Number of Reads', fontsize=12)
     ax.grid(axis='y', alpha=0.3)
+    ax.set_ylim(0, max_reads)
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, f"04_mismatch_reads{file_suffix}.png")
+    filepath = os.path.join(output_dir, f"04_mismatch_reads{file_suffix}_maxreads{max_reads}.png")
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     return filepath
 
 
-def create_reads_by_category_plot(df, output_dir, file_suffix=''):
+def create_reads_by_category_plot(df, output_dir, file_suffix='', max_reads=5000):
     """Plot 7: Read count distribution by match status and mismatch reason."""
     click.echo("Creating plot 7: Read count distribution by category...")
-    filepath = os.path.join(output_dir, f"07_reads_by_category{file_suffix}.png")
-    result = _create_status_boxplot(df, 'number_of_reads', 'Number of Reads', filepath)
+    filepath = os.path.join(output_dir, f"07_reads_by_category{file_suffix}_maxreads{max_reads}.png")
+    result = _create_status_boxplot(df, 'number_of_reads', 'Number of Reads', filepath,
+                                    ylim=(0, max_reads))
     if result is None:
         click.echo("  No data to plot")
     return result
@@ -932,7 +936,7 @@ def create_dilution_sample_distribution(df, output_dir, file_suffix=''):
     return filepath
 
 
-def create_reads_removed_vs_reads_plot(df, output_dir, file_suffix=''):
+def create_reads_removed_vs_reads_plot(df, output_dir, file_suffix='', max_reads=5000):
     """Plot 8: Proportion of reads removed vs number of reads."""
     click.echo("Creating plot 8: Proportion of reads removed vs number of reads...")
 
@@ -958,9 +962,10 @@ def create_reads_removed_vs_reads_plot(df, output_dir, file_suffix=''):
     ax.set_ylabel('Number of Reads', fontsize=12)
     ax.legend(fontsize=10)
     ax.grid(alpha=0.3)
+    ax.set_ylim(0, max_reads)
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, f"08_reads_removed_vs_reads{file_suffix}.png")
+    filepath = os.path.join(output_dir, f"08_reads_removed_vs_reads{file_suffix}_maxreads{max_reads}.png")
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     return filepath
@@ -970,7 +975,8 @@ def create_reads_removed_vs_reads_plot(df, output_dir, file_suffix=''):
 # Orchestrator
 # ---------------------------------------------------------------------------
 
-def run_concentration_analysis(converged_df, output_dir, file_suffix='', verbose=False):
+def run_concentration_analysis(converged_df, output_dir, file_suffix='', verbose=False,
+                               max_reads=5000):
     """Run the full concentration analysis: filter, stats, plots, save CSV.
 
     Parameters
@@ -981,6 +987,8 @@ def run_concentration_analysis(converged_df, output_dir, file_suffix='', verbose
         Directory for output files.
     file_suffix : str
         Suffix appended to output filenames (e.g. '_corrected').
+    max_reads : int
+        Cap for reads-axis in affected plots (plots 4, 7, 8).
     """
     setup_plot_style()
     os.makedirs(output_dir, exist_ok=True)
@@ -1023,11 +1031,11 @@ def run_concentration_analysis(converged_df, output_dir, file_suffix='', verbose
         lambda: create_concentration_by_status_plot(filtered_df, output_dir, file_suffix=file_suffix),
         lambda: create_sample_distribution_combined(filtered_df, output_dir, file_suffix=file_suffix),
         lambda: create_species_agreement_plot(filtered_df, output_dir, file_suffix=file_suffix),
-        lambda: create_mismatch_reads_plot(filtered_df, output_dir, file_suffix=file_suffix),
+        lambda: create_mismatch_reads_plot(filtered_df, output_dir, file_suffix=file_suffix, max_reads=max_reads),
         lambda: create_dilution_test_plot(filtered_df, output_dir, file_suffix=file_suffix),
         lambda: create_dilution_sample_distribution(filtered_df, output_dir, file_suffix=file_suffix),
-        lambda: create_reads_by_category_plot(filtered_df, output_dir, file_suffix=file_suffix),
-        lambda: create_reads_removed_vs_reads_plot(filtered_df, output_dir, file_suffix=file_suffix),
+        lambda: create_reads_by_category_plot(filtered_df, output_dir, file_suffix=file_suffix, max_reads=max_reads),
+        lambda: create_reads_removed_vs_reads_plot(filtered_df, output_dir, file_suffix=file_suffix, max_reads=max_reads),
     ]:
         path = plot_fn()
         if path:

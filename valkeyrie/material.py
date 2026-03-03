@@ -275,7 +275,8 @@ def create_material_concentration_boxplot(df, material_stats, material_column, o
     return filepath
 
 
-def create_material_reads_boxplot(df, material_stats, material_column, output_dir):
+def create_material_reads_boxplot(df, material_stats, material_column, output_dir,
+                                  max_reads=5000):
     """Plot 2: Read count distribution by material."""
     click.echo("Creating plot 2: Read count distribution by material...")
 
@@ -330,9 +331,10 @@ def create_material_reads_boxplot(df, material_stats, material_column, output_di
     ax.set_ylabel('Number of Reads', fontsize=12)
     ax.set_xticklabels(reads_labels, rotation=45, ha='right')
     ax.grid(axis='y', alpha=0.3)
+    ax.set_ylim(0, max_reads)
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, f"02_{material_column}_reads_boxplot.png")
+    filepath = os.path.join(output_dir, f"02_{material_column}_reads_boxplot_maxreads{max_reads}.png")
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     return filepath
@@ -377,7 +379,8 @@ def create_material_success_rates(df, material_stats, material_column, output_di
     return filepath
 
 
-def create_material_bubble_plot(df, material_stats, material_column, output_dir):
+def create_material_bubble_plot(df, material_stats, material_column, output_dir,
+                                max_reads=5000):
     """Plot 4: Bubble plot of mean proportion removed vs mean reads by material."""
     click.echo("Creating plot 4: Mean proportion of reads removed vs mean read count bubble plot...")
 
@@ -431,14 +434,13 @@ def create_material_bubble_plot(df, material_stats, material_column, output_dir)
     ax.set_ylabel('Mean Number of Reads', fontsize=12)
     ax.grid(alpha=0.3)
 
-    y_min, y_max = ax.get_ylim()
-    ax.set_ylim(min(y_min, -y_max * 0.05), y_max)
+    ax.set_ylim(0, max_reads)
 
     cbar = plt.colorbar(scatter, ax=ax)
     cbar.set_label('Success Rate (%)', fontsize=10)
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, f"04_{material_column}_reads_removed_vs_reads_bubble.png")
+    filepath = os.path.join(output_dir, f"04_{material_column}_reads_removed_vs_reads_bubble_maxreads{max_reads}.png")
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     return filepath
@@ -574,7 +576,7 @@ def create_material_contamination_plot(contamination_df, output_dir):
     return filepath
 
 
-def create_failed_sample_investigation(df, material_column, output_dir):
+def create_failed_sample_investigation(df, material_column, output_dir, max_reads=5000):
     """Plot 7: Scatter of reads vs concentration for failed samples, colored by failure category."""
     click.echo("Creating plot 7: Failed sample investigation...")
 
@@ -638,6 +640,7 @@ def create_failed_sample_investigation(df, material_column, output_dir):
 
     ax.set_xlabel('Number of Reads', fontsize=12)
     ax.set_ylabel('Proportion of Reads Removed', fontsize=12)
+    ax.set_xlim(0, max_reads)
     from matplotlib.lines import Line2D
     color_handles = [Line2D([0], [0], marker='o', color='w', markerfacecolor=c,
                             markersize=8, label=r)
@@ -653,7 +656,7 @@ def create_failed_sample_investigation(df, material_column, output_dir):
     ax.grid(alpha=0.3)
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, f"07_{material_column}_failed_sample_investigation.png")
+    filepath = os.path.join(output_dir, f"07_{material_column}_failed_sample_investigation_maxreads{max_reads}.png")
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     return filepath
@@ -994,7 +997,7 @@ def create_negative_control_abundance_barplot(full_df, mongo_data, output_dir):
     return filepath
 
 
-def create_reads_vs_spike_scatter(full_df, mongo_data, output_dir):
+def create_reads_vs_spike_scatter(full_df, mongo_data, output_dir, max_reads=5000):
     """Plot 11: Scatter of post-QC read count vs Agrobacterium fabrum spike abundance."""
     if full_df is None or 'number_of_reads' not in full_df.columns:
         click.echo("  No read count data available")
@@ -1015,24 +1018,83 @@ def create_reads_vs_spike_scatter(full_df, mongo_data, output_dir):
     df['spike_abundance'] = df['sample_id'].apply(_get_spike_abundance)
     df['number_of_reads'] = pd.to_numeric(df['number_of_reads'], errors='coerce')
 
-    df = df[(df['number_of_reads'] >= 0) & (df['number_of_reads'] <= 5000)]
+    df = df[(df['number_of_reads'] >= 0) & (df['number_of_reads'] <= max_reads)]
     df = df[df['number_of_reads'].notna()]
 
     if len(df) == 0:
-        click.echo("  No samples in 0–5000 reads range")
+        click.echo(f"  No samples in 0–{max_reads} reads range")
         return None
 
-    click.echo(f"  {len(df)} samples in 0–5000 reads range")
+    click.echo(f"  {len(df)} samples in 0–{max_reads} reads range")
+
+    # Mark negative controls
+    def _is_neg_ctrl(sample_type):
+        return pd.notna(sample_type) and 'negative control' in str(sample_type).lower()
+
+    df['_is_neg_ctrl'] = df['sample_type'].apply(_is_neg_ctrl)
 
     fig, ax = plt.subplots(figsize=(9, 6))
-    ax.scatter(df['number_of_reads'], df['spike_abundance'],
-               color='#5B9BD5', alpha=0.6, s=50, edgecolors='white', linewidth=0.5)
+
+    # Build per-run colour map
+    run_ids = [r for r in df['sequencing_run_id'].unique() if pd.notna(r)]
+    cmap = plt.cm.get_cmap('tab10', max(len(run_ids), 1))
+    run_colors = {rid: cmap(i) for i, rid in enumerate(run_ids)}
+
+    # Plot each run, splitting regular vs negative controls
+    for rid in run_ids:
+        sub = df[df['sequencing_run_id'] == rid]
+        reg = sub[~sub['_is_neg_ctrl']]
+        nc = sub[sub['_is_neg_ctrl']]
+        if len(reg) > 0:
+            ax.scatter(reg['number_of_reads'], reg['spike_abundance'],
+                       color=run_colors[rid], alpha=0.7, s=50,
+                       marker='o', edgecolors='white', linewidth=0.5,
+                       label=str(rid))
+        if len(nc) > 0:
+            ax.scatter(nc['number_of_reads'], nc['spike_abundance'],
+                       color=run_colors[rid], alpha=0.9, s=80,
+                       marker='^', edgecolors='black', linewidth=1.0,
+                       label=str(rid) + ' (neg ctrl)')
+
+    # Plot unknown-run samples
+    nan_sub = df[df['sequencing_run_id'].isna()]
+    if len(nan_sub) > 0:
+        nan_reg = nan_sub[~nan_sub['_is_neg_ctrl']]
+        nan_nc = nan_sub[nan_sub['_is_neg_ctrl']]
+        if len(nan_reg) > 0:
+            ax.scatter(nan_reg['number_of_reads'], nan_reg['spike_abundance'],
+                       color='#808080', alpha=0.7, s=50,
+                       marker='o', edgecolors='white', linewidth=0.5,
+                       label='Unknown')
+        if len(nan_nc) > 0:
+            ax.scatter(nan_nc['number_of_reads'], nan_nc['spike_abundance'],
+                       color='#808080', alpha=0.9, s=80,
+                       marker='^', edgecolors='black', linewidth=1.0,
+                       label='Unknown (neg ctrl)')
+
+    # Per-run colour legend
+    run_legend = ax.legend(title='Sequencing Run', fontsize=9, title_fontsize=10,
+                           loc='upper right')
+    ax.add_artist(run_legend)
+
+    # Marker-shape legend for sample type
+    from matplotlib.lines import Line2D
+    shape_handles = [
+        Line2D([0], [0], marker='o', color='grey', linestyle='none',
+               markersize=7, label='Sample'),
+        Line2D([0], [0], marker='^', color='grey', linestyle='none',
+               markersize=8, markeredgecolor='black', markeredgewidth=1,
+               label='Negative Control'),
+    ]
+    ax.legend(handles=shape_handles, title='Sample Type', fontsize=9,
+              title_fontsize=10, loc='upper left')
+
     ax.set_xlabel('Number of reads (post-QC)', fontsize=12)
     ax.set_ylabel('Agrobacterium fabrum abundance (%)', fontsize=12)
-    ax.set_xlim(0, 5000)
+    ax.set_xlim(0, max_reads)
     ax.grid(alpha=0.3)
     plt.tight_layout()
-    filepath = os.path.join(output_dir, "11_reads_vs_spike.png")
+    filepath = os.path.join(output_dir, f"11_reads_vs_spike_maxreads{max_reads}.png")
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     return filepath
@@ -1046,7 +1108,8 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
                           material_column='material',
                           contamination_materials=('cerebrospinalvätska','pleuravätska'),
                           full_df=None,
-                          sequencing_run_id=None):
+                          sequencing_run_id=None,
+                          max_reads=5000):
     """Run the full material analysis: filter, stats, 10 plots, save CSV.
 
     Parameters
@@ -1065,6 +1128,8 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
         Unfiltered converged DataFrame (includes controls) for spike analysis.
     sequencing_run_id : str, optional
         If provided, restrict spike plot to this sequencing run only.
+    max_reads : int
+        Cap for reads-axis in affected plots (plots 2, 4, 7, 11).
     """
     setup_plot_style()
     os.makedirs(output_dir, exist_ok=True)
@@ -1090,7 +1155,8 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
     if filepath:
         created.append(filepath)
 
-    filepath = create_material_reads_boxplot(df, material_stats, material_column, output_dir)
+    filepath = create_material_reads_boxplot(df, material_stats, material_column, output_dir,
+                                             max_reads=max_reads)
     if filepath:
         created.append(filepath)
 
@@ -1098,7 +1164,8 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
     if filepath:
         created.append(filepath)
 
-    filepath = create_material_bubble_plot(df, material_stats, material_column, output_dir)
+    filepath = create_material_bubble_plot(df, material_stats, material_column, output_dir,
+                                           max_reads=max_reads)
     if filepath:
         created.append(filepath)
 
@@ -1130,7 +1197,8 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
         combined_contamination_df.to_csv(contamination_output, index=False)
         click.echo(f"\nContamination data saved to {contamination_output}")
 
-    filepath = create_failed_sample_investigation(df, material_column, output_dir)
+    filepath = create_failed_sample_investigation(df, material_column, output_dir,
+                                                  max_reads=max_reads)
     if filepath:
         created.append(filepath)
 
@@ -1146,7 +1214,8 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
     if filepath:
         created.append(filepath)
 
-    filepath = create_reads_vs_spike_scatter(full_df, mongo_data, output_dir)
+    filepath = create_reads_vs_spike_scatter(full_df, mongo_data, output_dir,
+                                             max_reads=max_reads)
     if filepath:
         created.append(filepath)
 
