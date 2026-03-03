@@ -600,7 +600,7 @@ def create_species_agreement_plot(df, output_dir, file_suffix=''):
 
     ax.set_xlabel('Sanger Species Count', fontsize=12)
     ax.set_ylabel('Nanopore Species Count', fontsize=12)
-    ax.legend(fontsize=11)
+    ax.legend(fontsize=11, bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0)
     ax.grid(alpha=0.3)
 
     plt.tight_layout()
@@ -660,8 +660,9 @@ def create_mismatch_reads_plot(df, output_dir, file_suffix='', max_reads=5000):
         patch.set_alpha(0.7)
 
     for i, data in enumerate(reads_data):
-        x_jitter = np.random.default_rng(42).normal(i + 1, 0.04, size=len(data))
-        ax.scatter(x_jitter, data, color='black', s=15, alpha=0.4, zorder=3)
+        data_in_range = data[data <= max_reads]
+        x_jitter = np.random.default_rng(42).normal(i + 1, 0.04, size=len(data_in_range))
+        ax.scatter(x_jitter, data_in_range, color='black', s=15, alpha=0.4, zorder=3)
 
     # Label outliers
     for i, (data, sample_info) in enumerate(zip(reads_data, sample_ids_by_reason)):
@@ -672,7 +673,7 @@ def create_mismatch_reads_plot(df, output_dir, file_suffix='', max_reads=5000):
         upper_bound = q3 + 1.5 * iqr
 
         for sample_id, reads in sample_info:
-            if reads < lower_bound or reads > upper_bound:
+            if (reads < lower_bound or reads > upper_bound) and reads <= max_reads:
                 ax.text(i + 1.05, reads, sample_id,
                         fontsize=8, ha='left', va='center', alpha=0.7)
 
@@ -831,7 +832,8 @@ def create_dilution_test_plot(df, output_dir, file_suffix=''):
     ] + [
         Patch(facecolor=COLORS['no_data'], edgecolor='black', label='No Data', alpha=0.7),
     ]
-    ax.legend(handles=legend_elements, loc='upper right', fontsize=10, ncol=2)
+    ax.legend(handles=legend_elements, fontsize=10, ncol=1,
+              bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0)
 
     plt.tight_layout()
     filepath = os.path.join(output_dir, f"05_dilution_test_results{file_suffix}.png")
@@ -926,7 +928,7 @@ def create_dilution_sample_distribution(df, output_dir, file_suffix=''):
     ax.set_xticks(x)
     ax.set_xticklabels(['1:1 Dilution', '1:10 Dilution'], fontsize=12)
     ax.set_ylabel('Number of Samples', fontsize=12)
-    ax.legend(loc='upper left', fontsize=10)
+    ax.legend(fontsize=10, bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0)
     ax.grid(axis='y', alpha=0.3)
 
     plt.tight_layout()
@@ -960,7 +962,7 @@ def create_reads_removed_vs_reads_plot(df, output_dir, file_suffix='', max_reads
 
     ax.set_xlabel('Proportion of Reads Removed', fontsize=12)
     ax.set_ylabel('Number of Reads', fontsize=12)
-    ax.legend(fontsize=10)
+    ax.legend(fontsize=10, bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0)
     ax.grid(alpha=0.3)
     ax.set_ylim(0, max_reads)
 

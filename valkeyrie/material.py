@@ -370,7 +370,7 @@ def create_material_success_rates(df, material_stats, material_column, output_di
     ax.set_xticklabels(materials, rotation=45, ha='right')
     ax.set_ylim(0, 105)
     ax.grid(axis='y', alpha=0.3)
-    ax.legend()
+    ax.legend(bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0)
 
     plt.tight_layout()
     filepath = os.path.join(output_dir, f"03_{material_column}_success_rates.png")
@@ -415,6 +415,14 @@ def create_material_bubble_plot(df, material_stats, material_column, output_dir,
         click.echo("  No data to plot")
         plt.close()
         return None
+
+    # Filter materials whose mean read count exceeds the visible y-range
+    in_range = [i for i, r in enumerate(mean_reads) if r <= max_reads]
+    mean_props    = [mean_props[i]    for i in in_range]
+    mean_reads    = [mean_reads[i]    for i in in_range]
+    success_rates = [success_rates[i] for i in in_range]
+    labels        = [labels[i]        for i in in_range]
+    ns            = [ns[i]            for i in in_range]
 
     sizes = 100 + np.array(ns) ** 2 * 30
 
@@ -606,6 +614,10 @@ def create_failed_sample_investigation(df, material_column, output_dir, max_read
     mismatches['reason_category'] = mismatches.apply(_reason_category, axis=1)
     mismatches['test_type'] = mismatches.apply(_test_type, axis=1)
     mismatches['number_of_reads'] = mismatches['number_of_reads'].fillna(0)
+    mismatches = mismatches[mismatches['number_of_reads'] <= max_reads]
+    if len(mismatches) == 0:
+        click.echo(f"  No failed samples with \u2264{max_reads} reads")
+        return None
 
     reason_palette = {
         'QC Failed': COLORS['qc_failed'],
@@ -1023,17 +1035,17 @@ def create_reads_vs_spike_scatter(full_df, mongo_data, output_dir, max_reads=500
 
     df = full_df.copy()
 
-    def _get_spike_abundance(sample_id):
+    def _get_spike_estimated_counts(sample_id):
         doc = mongo_data.get(sample_id)
         if not doc:
             return 0.0
         hits = doc.get('taxonomic_data', {}).get('hits', [])
         for hit in hits:
             if hit.get('species', '').lower() == 'agrobacterium fabrum':
-                return float(hit.get('abundance', 0))
+                return float(hit.get('estimated_counts', 0) or 0)
         return 0.0
 
-    df['spike_abundance'] = df['sample_id'].apply(_get_spike_abundance)
+    df['spike_value'] = df['sample_id'].apply(_get_spike_estimated_counts)
     df['number_of_reads'] = pd.to_numeric(df['number_of_reads'], errors='coerce')
 
     df = df[(df['number_of_reads'] >= 0) & (df['number_of_reads'] <= max_reads)]
@@ -1055,7 +1067,7 @@ def create_reads_vs_spike_scatter(full_df, mongo_data, output_dir, max_reads=500
 
     # Build per-run colour map
     run_ids = [r for r in df['sequencing_run_id'].unique() if pd.notna(r)]
-    cmap = plt.cm.get_cmap('tab10', max(len(run_ids), 1))
+    cmap = plt.cm.get_cmap('tab20', max(len(run_ids), 1))
     run_colors = {rid: cmap(i) for i, rid in enumerate(run_ids)}
 
     # Plot each run, splitting regular vs negative controls
@@ -1064,14 +1076,14 @@ def create_reads_vs_spike_scatter(full_df, mongo_data, output_dir, max_reads=500
         reg = sub[~sub['_is_neg_ctrl']]
         nc = sub[sub['_is_neg_ctrl']]
         if len(reg) > 0:
-            ax.scatter(reg['number_of_reads'], reg['spike_abundance'],
+            ax.scatter(reg['number_of_reads'], reg['spike_value'],
                        color=run_colors[rid], alpha=0.7, s=50,
                        marker='o', edgecolors='white', linewidth=0.5,
                        label=str(rid))
         if len(nc) > 0:
-            ax.scatter(nc['number_of_reads'], nc['spike_abundance'],
+            ax.scatter(nc['number_of_reads'], nc['spike_value'],
                        color=run_colors[rid], alpha=0.9, s=80,
-                       marker='^', edgecolors='black', linewidth=1.0,
+                       marker='^', edgecolors='none', linewidth=0,
                        label=str(rid) + ' (neg ctrl)')
 
     # Plot unknown-run samples
@@ -1080,19 +1092,19 @@ def create_reads_vs_spike_scatter(full_df, mongo_data, output_dir, max_reads=500
         nan_reg = nan_sub[~nan_sub['_is_neg_ctrl']]
         nan_nc = nan_sub[nan_sub['_is_neg_ctrl']]
         if len(nan_reg) > 0:
-            ax.scatter(nan_reg['number_of_reads'], nan_reg['spike_abundance'],
+            ax.scatter(nan_reg['number_of_reads'], nan_reg['spike_value'],
                        color='#808080', alpha=0.7, s=50,
                        marker='o', edgecolors='white', linewidth=0.5,
                        label='Unknown')
         if len(nan_nc) > 0:
-            ax.scatter(nan_nc['number_of_reads'], nan_nc['spike_abundance'],
+            ax.scatter(nan_nc['number_of_reads'], nan_nc['spike_value'],
                        color='#808080', alpha=0.9, s=80,
-                       marker='^', edgecolors='black', linewidth=1.0,
+                       marker='^', edgecolors='none', linewidth=0,
                        label='Unknown (neg ctrl)')
 
     # Per-run colour legend
     run_legend = ax.legend(title='Sequencing Run', fontsize=9, title_fontsize=10,
-                           loc='upper right')
+                           bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0)
     ax.add_artist(run_legend)
 
     # Marker-shape legend for sample type
@@ -1101,14 +1113,14 @@ def create_reads_vs_spike_scatter(full_df, mongo_data, output_dir, max_reads=500
         Line2D([0], [0], marker='o', color='grey', linestyle='none',
                markersize=7, label='Sample'),
         Line2D([0], [0], marker='^', color='grey', linestyle='none',
-               markersize=8, markeredgecolor='black', markeredgewidth=1,
-               label='Negative Control'),
+               markersize=8, label='Negative Control'),
     ]
     ax.legend(handles=shape_handles, title='Sample Type', fontsize=9,
-              title_fontsize=10, loc='upper left')
+              title_fontsize=10, bbox_to_anchor=(1.02, 0), loc='lower left',
+              borderaxespad=0)
 
     ax.set_xlabel('Number of reads (post-QC)', fontsize=12)
-    ax.set_ylabel('Agrobacterium fabrum abundance (%)', fontsize=12)
+    ax.set_ylabel('Agrobacterium fabrum estimated counts', fontsize=12)
     ax.set_xlim(0, max_reads)
     ax.grid(alpha=0.3)
     plt.tight_layout()
