@@ -1027,7 +1027,7 @@ def create_negative_control_abundance_barplot(full_df, mongo_data, output_dir):
     return filepath
 
 
-def create_reads_vs_spike_scatter(full_df, mongo_data, output_dir, max_reads=5000):
+def create_reads_vs_spike_scatter(full_df, mongo_data, output_dir, max_reads=None):
     """Plot 11: Scatter of post-QC read count vs Agrobacterium fabrum spike abundance."""
     if full_df is None or 'number_of_reads' not in full_df.columns:
         click.echo("  No read count data available")
@@ -1048,14 +1048,18 @@ def create_reads_vs_spike_scatter(full_df, mongo_data, output_dir, max_reads=500
     df['spike_value'] = df['sample_id'].apply(_get_spike_estimated_counts)
     df['number_of_reads'] = pd.to_numeric(df['number_of_reads'], errors='coerce')
 
-    df = df[(df['number_of_reads'] >= 0) & (df['number_of_reads'] <= max_reads)]
+    mask = df['number_of_reads'] >= 0
+    if max_reads is not None:
+        mask &= df['number_of_reads'] <= max_reads
+    df = df[mask]
     df = df[df['number_of_reads'].notna()]
 
+    range_str = f"0–{max_reads}" if max_reads is not None else "all"
     if len(df) == 0:
-        click.echo(f"  No samples in 0–{max_reads} reads range")
+        click.echo(f"  No samples in {range_str} reads range")
         return None
 
-    click.echo(f"  {len(df)} samples in 0–{max_reads} reads range")
+    click.echo(f"  {len(df)} samples in {range_str} reads range")
 
     # Mark negative controls
     def _is_neg_ctrl(sample_type):
@@ -1115,17 +1119,20 @@ def create_reads_vs_spike_scatter(full_df, mongo_data, output_dir, max_reads=500
         Line2D([0], [0], marker='^', color='grey', linestyle='none',
                markersize=8, label='Negative Control'),
     ]
-    ax.legend(handles=shape_handles, title='Sample Type', fontsize=9,
-              title_fontsize=10, bbox_to_anchor=(1.02, 0), loc='lower left',
-              borderaxespad=0)
+    shape_legend = ax.legend(handles=shape_handles, title='Sample Type', fontsize=9,
+                             title_fontsize=10, bbox_to_anchor=(1.02, 0), loc='lower left',
+                             borderaxespad=0)
 
     ax.set_xlabel('Number of reads (post-QC)', fontsize=12)
     ax.set_ylabel('Agrobacterium fabrum estimated counts', fontsize=12)
-    ax.set_xlim(0, max_reads)
+    if max_reads is not None:
+        ax.set_xlim(0, max_reads)
     ax.grid(alpha=0.3)
     plt.tight_layout()
-    filepath = os.path.join(output_dir, f"11_reads_vs_spike_maxreads{max_reads}.png")
-    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+    suffix = f"_maxreads{max_reads}" if max_reads is not None else ""
+    filepath = os.path.join(output_dir, f"11_reads_vs_spike{suffix}.png")
+    plt.savefig(filepath, dpi=300, bbox_inches='tight',
+                bbox_extra_artists=[run_legend, shape_legend])
     plt.close()
     return filepath
 
