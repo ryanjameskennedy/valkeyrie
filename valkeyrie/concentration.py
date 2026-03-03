@@ -21,6 +21,85 @@ from matplotlib.patches import Patch
 import seaborn as sns
 
 
+_SINGLE_COLOR = '#44aa44'  # uniform green for non-status-encoded plots
+
+
+def _create_status_boxplot(df, column, ylabel, filepath):
+    """Shared boxplot of `column` split by match_category, coloured uniformly."""
+    df_plot = df[(df[column].notna()) & (df['matching'].notna())].copy()
+    if len(df_plot) == 0:
+        return None
+
+    data, labels = [], []
+    for cat_name, _ in MATCH_CATEGORIES + MISMATCH_REASONS:
+        subset = df_plot[df_plot['match_category'] == cat_name]
+        if len(subset) > 0:
+            data.append(subset[column].values)
+            labels.append(f'{cat_name}\n(n={len(subset)})')
+
+    if not data:
+        return None
+
+    fig, ax = plt.subplots(figsize=(14, 7))
+    bp = ax.boxplot(
+        data, tick_labels=labels, patch_artist=True,
+        showmeans=True, widths=0.6,
+        boxprops=dict(linewidth=1.5),
+        whiskerprops=dict(linewidth=1.5),
+        capprops=dict(linewidth=1.5),
+        medianprops=dict(linewidth=2, color='darkred'),
+        meanprops=dict(marker='D', markerfacecolor='darkblue', markersize=6, markeredgecolor='black'),
+    )
+    for patch in bp['boxes']:
+        patch.set_facecolor(_SINGLE_COLOR)
+        patch.set_alpha(0.7)
+    for i, d in enumerate(data):
+        x_jitter = np.random.default_rng(42).normal(i + 1, 0.04, size=len(d))
+        ax.scatter(x_jitter, d, color='black', s=15, alpha=0.4, zorder=3)
+    ax.set_ylabel(ylabel, fontsize=12)
+    ax.grid(axis='y', alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+    plt.close()
+    return filepath
+
+
+def _create_status_barplot(df, filepath):
+    """Shared bar chart of sample counts by match_category, coloured uniformly."""
+    categories, counts = [], []
+    neg_controls = df[df['matching'].isna()]
+    if len(neg_controls) > 0:
+        categories.append('Negative\nControl')
+        counts.append(len(neg_controls))
+
+    for cat_name, _ in MATCH_CATEGORIES + MISMATCH_REASONS:
+        subset = df[df['match_category'] == cat_name]
+        if len(subset) > 0:
+            categories.append(cat_name)
+            counts.append(len(subset))
+
+    if not counts:
+        return None
+
+    fig, ax = plt.subplots(figsize=(12, 7))
+    bars = ax.bar(range(len(categories)), counts, alpha=0.7,
+                  edgecolor='black', linewidth=1.5, color=_SINGLE_COLOR)
+    total = len(df)
+    for bar, count in zip(bars, counts):
+        height = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width() / 2., height + 1,
+                f'{count}\n({count / total * 100:.1f}%)',
+                ha='center', va='bottom', fontsize=10, fontweight='bold')
+    ax.set_xticks(range(len(categories)))
+    ax.set_xticklabels(categories, fontsize=11)
+    ax.set_ylabel('Number of Samples', fontsize=12)
+    ax.grid(axis='y', alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+    plt.close()
+    return filepath
+
+
 # ---------------------------------------------------------------------------
 # DataFrame construction
 # ---------------------------------------------------------------------------
@@ -65,7 +144,7 @@ def determine_reason(row):
     if dilution_test is True or proteinase_k_test is True:
         return 'Inhibition'
 
-    return 'Contamination'
+    return 'Mismatch'
 
 
 def assign_match_category(df):
@@ -76,7 +155,7 @@ def assign_match_category(df):
       - Genus Match: sanger_undetected_count == 0 (all detected at genus+, some only genus)
       - Partial Match: some sanger species undetected even at genus level
 
-    Non-matches keep their ``reason`` value (QC Failed / Inhibition / Contamination).
+    Non-matches keep their ``reason`` value (QC Failed / Inhibition / Mismatch).
     """
     result = df.copy()
     conditions = [
@@ -395,107 +474,21 @@ def calculate_statistics(df, concentration_col='library_concentration'):
 def create_concentration_boxplot_combined(df, output_dir, file_suffix=''):
     """Plot 1: Proportion of reads removed by match status and mismatch reason."""
     click.echo("Creating plot 1: Proportion of reads removed by match status...")
-
-    fig, ax = plt.subplots(figsize=(14, 7))
-
-    df_with_conc = df[(df['proportion_removed'].notna()) & (df['matching'].notna())].copy()
-    if len(df_with_conc) == 0:
-        click.echo("  No data to plot")
-        plt.close()
-        return None
-
-    conc_data = []
-    labels = []
-    colors_list = []
-
-    for cat_name, cat_color in MATCH_CATEGORIES + MISMATCH_REASONS:
-        cat_samples = df_with_conc[df_with_conc['match_category'] == cat_name]
-        if len(cat_samples) > 0:
-            conc_data.append(cat_samples['proportion_removed'].values)
-            labels.append(f'{cat_name}\n(n={len(cat_samples)})')
-            colors_list.append(cat_color)
-
-    if not conc_data:
-        click.echo("  No data to plot")
-        plt.close()
-        return None
-
-    bp = ax.boxplot(
-        conc_data, tick_labels=labels, patch_artist=True,
-        showmeans=True, widths=0.6,
-        boxprops=dict(linewidth=1.5),
-        whiskerprops=dict(linewidth=1.5),
-        capprops=dict(linewidth=1.5),
-        medianprops=dict(linewidth=2, color='darkred'),
-        meanprops=dict(marker='D', markerfacecolor='darkblue', markersize=6, markeredgecolor='black'),
-    )
-    for patch, color in zip(bp['boxes'], colors_list):
-        patch.set_facecolor(color)
-        patch.set_alpha(0.7)
-
-    for i, data in enumerate(conc_data):
-        x_jitter = np.random.default_rng(42).normal(i + 1, 0.04, size=len(data))
-        ax.scatter(x_jitter, data, color='black', s=15, alpha=0.4, zorder=3)
-
-    ax.set_ylabel('Proportion of Reads Removed', fontsize=12)
-    ax.grid(axis='y', alpha=0.3)
-
-    plt.tight_layout()
     filepath = os.path.join(output_dir, f"01_reads_removed_by_status{file_suffix}.png")
-    plt.savefig(filepath, dpi=300, bbox_inches='tight')
-    plt.close()
-    return filepath
+    result = _create_status_boxplot(df, 'proportion_removed', 'Proportion of Reads Removed', filepath)
+    if result is None:
+        click.echo("  No data to plot")
+    return result
 
 
 def create_sample_distribution_combined(df, output_dir, file_suffix=''):
     """Plot 2: Bar chart showing all sample categories."""
     click.echo("Creating plot 2: Combined sample distribution...")
-
-    fig, ax = plt.subplots(figsize=(12, 7))
-
-    categories = []
-    counts = []
-    colors_list = []
-
-    neg_controls = df[df['matching'].isna()]
-    if len(neg_controls) > 0:
-        categories.append('Negative\nControl')
-        counts.append(len(neg_controls))
-        colors_list.append(COLORS['negative_control'])
-
-    for cat_name, cat_color in MATCH_CATEGORIES + MISMATCH_REASONS:
-        cat_samples = df[df['match_category'] == cat_name]
-        if len(cat_samples) > 0:
-            categories.append(cat_name)
-            counts.append(len(cat_samples))
-            colors_list.append(cat_color)
-
-    if not counts:
-        click.echo("  No data to plot")
-        plt.close()
-        return None
-
-    bars = ax.bar(range(len(categories)), counts, alpha=0.7,
-                  edgecolor='black', linewidth=1.5, color=colors_list)
-
-    total_samples = len(df)
-    for bar, count in zip(bars, counts):
-        height = bar.get_height()
-        pct = count / total_samples * 100
-        ax.text(bar.get_x() + bar.get_width() / 2., height + 1,
-                f'{count}\n({pct:.1f}%)', ha='center', va='bottom',
-                fontsize=10, fontweight='bold')
-
-    ax.set_xticks(range(len(categories)))
-    ax.set_xticklabels(categories, fontsize=11)
-    ax.set_ylabel('Number of Samples', fontsize=12)
-    ax.grid(axis='y', alpha=0.3)
-
-    plt.tight_layout()
     filepath = os.path.join(output_dir, f"02_sample_distribution{file_suffix}.png")
-    plt.savefig(filepath, dpi=300, bbox_inches='tight')
-    plt.close()
-    return filepath
+    result = _create_status_barplot(df, filepath)
+    if result is None:
+        click.echo("  No data to plot")
+    return result
 
 
 def create_species_agreement_plot(df, output_dir, file_suffix=''):
@@ -623,56 +616,24 @@ def create_mismatch_reads_plot(df, output_dir, file_suffix=''):
 def create_reads_by_category_plot(df, output_dir, file_suffix=''):
     """Plot 7: Read count distribution by match status and mismatch reason."""
     click.echo("Creating plot 7: Read count distribution by category...")
-
-    fig, ax = plt.subplots(figsize=(14, 7))
-
-    df_with_reads = df[(df['number_of_reads'].notna()) & (df['matching'].notna())].copy()
-    if len(df_with_reads) == 0:
-        click.echo("  No data to plot")
-        plt.close()
-        return None
-
-    reads_data = []
-    labels = []
-    colors_list = []
-
-    for cat_name, cat_color in MATCH_CATEGORIES + MISMATCH_REASONS:
-        cat_samples = df_with_reads[df_with_reads['match_category'] == cat_name]
-        if len(cat_samples) > 0:
-            reads_data.append(cat_samples['number_of_reads'].values)
-            labels.append(f'{cat_name}\n(n={len(cat_samples)})')
-            colors_list.append(cat_color)
-
-    if not reads_data:
-        click.echo("  No data to plot")
-        plt.close()
-        return None
-
-    bp = ax.boxplot(
-        reads_data, tick_labels=labels, patch_artist=True,
-        showmeans=True, widths=0.6,
-        boxprops=dict(linewidth=1.5),
-        whiskerprops=dict(linewidth=1.5),
-        capprops=dict(linewidth=1.5),
-        medianprops=dict(linewidth=2, color='darkred'),
-        meanprops=dict(marker='D', markerfacecolor='darkblue', markersize=6, markeredgecolor='black'),
-    )
-    for patch, color in zip(bp['boxes'], colors_list):
-        patch.set_facecolor(color)
-        patch.set_alpha(0.7)
-
-    for i, data in enumerate(reads_data):
-        x_jitter = np.random.default_rng(42).normal(i + 1, 0.04, size=len(data))
-        ax.scatter(x_jitter, data, color='black', s=15, alpha=0.4, zorder=3)
-
-    ax.set_ylabel('Number of Reads', fontsize=12)
-    ax.grid(axis='y', alpha=0.3)
-
-    plt.tight_layout()
     filepath = os.path.join(output_dir, f"07_reads_by_category{file_suffix}.png")
-    plt.savefig(filepath, dpi=300, bbox_inches='tight')
-    plt.close()
-    return filepath
+    result = _create_status_boxplot(df, 'number_of_reads', 'Number of Reads', filepath)
+    if result is None:
+        click.echo("  No data to plot")
+    return result
+
+
+def create_concentration_by_status_plot(df, output_dir, file_suffix=''):
+    """Plot 1b: Library prep concentration by match status and mismatch reason."""
+    click.echo("Creating plot 1b: Library prep concentration by match status...")
+    if 'library_concentration' not in df.columns:
+        click.echo("  No library_concentration data available")
+        return None
+    filepath = os.path.join(output_dir, f"01_concentration_by_status{file_suffix}.png")
+    result = _create_status_boxplot(df, 'library_concentration', 'Library Concentration (ng/uL)', filepath)
+    if result is None:
+        click.echo("  No data to plot")
+    return result
 
 
 def create_dilution_test_plot(df, output_dir, file_suffix=''):
@@ -965,16 +926,16 @@ def run_concentration_analysis(converged_df, output_dir, file_suffix=''):
     click.echo(f"  Removed {neg_removed} negative controls, {pos_removed} positive controls")
     click.echo(f"  Remaining: {len(filtered_df)} samples")
 
-    # Print contamination samples
-    contamination = filtered_df[
-        (filtered_df['matching'] == 0) & (filtered_df['reason'] == 'Contamination')
+    # Print mismatch samples
+    mismatch_samples = filtered_df[
+        (filtered_df['matching'] == 0) & (filtered_df['reason'] == 'Mismatch')
     ]
-    if len(contamination) > 0:
-        click.echo(f"\nContamination samples (n={len(contamination)}):")
-        for sid in contamination['sample_id']:
+    if len(mismatch_samples) > 0:
+        click.echo(f"\nMismatch samples (n={len(mismatch_samples)}):")
+        for sid in mismatch_samples['sample_id']:
             click.echo(f"  - {sid}")
     else:
-        click.echo("\nNo samples classified as contamination.")
+        click.echo("\nNo samples classified as mismatch.")
 
     # Statistics
     valid_data, bin_stats = calculate_statistics(filtered_df)
@@ -986,6 +947,7 @@ def run_concentration_analysis(converged_df, output_dir, file_suffix=''):
     created = []
     for plot_fn in [
         lambda: create_concentration_boxplot_combined(filtered_df, output_dir, file_suffix=file_suffix),
+        lambda: create_concentration_by_status_plot(filtered_df, output_dir, file_suffix=file_suffix),
         lambda: create_sample_distribution_combined(filtered_df, output_dir, file_suffix=file_suffix),
         lambda: create_species_agreement_plot(filtered_df, output_dir, file_suffix=file_suffix),
         lambda: create_mismatch_reads_plot(filtered_df, output_dir, file_suffix=file_suffix),

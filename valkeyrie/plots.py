@@ -9,29 +9,29 @@ import seaborn as sns
 
 # Consistent color scheme across all plots
 COLORS = {
-    'full_match': '#44aa44',
-    'partial_match': '#88cc88',
-    'partial_match_weak': '#f0c430',
+    'full_match':            '#44aa44',  # green
+    'partial_match':         '#4169e1',  # blue (Genus Match)
+    'partial_match_weak':    '#f0c430',  # yellow
     'partial_match_species': '#aadd88',
-    'qc_failed': '#ffa500',
-    'inhibition': '#ff6b6b',
-    'contamination': '#4169e1',
-    'negative_control': '#808080',
-    'mismatch': '#D73027',
-    'match': '#44aa44',
-    'no_data': '#808080',
+    'qc_failed':             '#D73027',  # red
+    'inhibition':            '#ff6b6b',
+    'contamination':         '#4169e1',  # blue (kept for back-compat)
+    'mismatch':              '#E07B39',  # dark orange
+    'negative_control':      '#808080',
+    'match':                 '#44aa44',
+    'no_data':               '#808080',
 }
 
 MATCH_CATEGORIES = [
-    ('Species Match', COLORS['full_match']),
-    ('Genus Match', COLORS['partial_match']),
-    ('Partial Match', COLORS['partial_match_weak']),
+    ('Species Match', COLORS['full_match']),         # green
+    ('Genus Match',   COLORS['partial_match']),      # blue
+    ('Partial Match', COLORS['partial_match_weak']), # yellow
 ]
 
 MISMATCH_REASONS = [
-    ('QC Failed', COLORS['qc_failed']),
-    ('Inhibition', COLORS['inhibition']),
-    ('Contamination', COLORS['contamination']),
+    ('QC Failed',  COLORS['qc_failed']),   # red
+    ('Inhibition', COLORS['inhibition']),  # coral
+    ('Mismatch',   COLORS['mismatch']),    # dark orange
 ]
 
 

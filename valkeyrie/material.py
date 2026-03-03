@@ -482,9 +482,8 @@ def create_material_contamination_plot(contamination_df, output_dir):
         click.echo("  No contamination data available")
         return None
 
-    # Sort samples by material first, then by sequencing_run_id within each material
     contamination_df = contamination_df.sort_values(
-        ['contamination_material', 'sequencing_run_id']
+        ['sequencing_run_id', 'sample_name']
     )
 
     # Collect all unique contaminant species and build a read-count matrix
@@ -587,7 +586,7 @@ def create_failed_sample_investigation(df, material_column, output_dir):
     def _reason_category(row):
         if row.get('reason') == 'QC Failed':
             return 'QC Failed'
-        return 'Contamination'
+        return 'Mismatch'
 
     def _test_type(row):
         pk = row.get('proteinase_k_test', False)
@@ -608,7 +607,7 @@ def create_failed_sample_investigation(df, material_column, output_dir):
 
     reason_palette = {
         'QC Failed': COLORS['qc_failed'],
-        'Contamination': COLORS['contamination'],
+        'Mismatch':  COLORS['mismatch'],
     }
     test_markers = {
         'Proteinase K': '^',
@@ -995,6 +994,50 @@ def create_negative_control_abundance_barplot(full_df, mongo_data, output_dir):
     return filepath
 
 
+def create_reads_vs_spike_scatter(full_df, mongo_data, output_dir):
+    """Plot 11: Scatter of post-QC read count vs Agrobacterium fabrum spike abundance."""
+    if full_df is None or 'number_of_reads' not in full_df.columns:
+        click.echo("  No read count data available")
+        return None
+
+    df = full_df.copy()
+
+    def _get_spike_abundance(sample_id):
+        doc = mongo_data.get(sample_id)
+        if not doc:
+            return 0.0
+        hits = doc.get('taxonomic_data', {}).get('hits', [])
+        for hit in hits:
+            if hit.get('species', '').lower() == 'agrobacterium fabrum':
+                return float(hit.get('abundance', 0))
+        return 0.0
+
+    df['spike_abundance'] = df['sample_id'].apply(_get_spike_abundance)
+    df['number_of_reads'] = pd.to_numeric(df['number_of_reads'], errors='coerce')
+
+    df = df[(df['number_of_reads'] >= 0) & (df['number_of_reads'] <= 5000)]
+    df = df[df['number_of_reads'].notna()]
+
+    if len(df) == 0:
+        click.echo("  No samples in 0–5000 reads range")
+        return None
+
+    click.echo(f"  {len(df)} samples in 0–5000 reads range")
+
+    fig, ax = plt.subplots(figsize=(9, 6))
+    ax.scatter(df['number_of_reads'], df['spike_abundance'],
+               color='#5B9BD5', alpha=0.6, s=50, edgecolors='white', linewidth=0.5)
+    ax.set_xlabel('Number of reads (post-QC)', fontsize=12)
+    ax.set_ylabel('Agrobacterium fabrum abundance (%)', fontsize=12)
+    ax.set_xlim(0, 5000)
+    ax.grid(alpha=0.3)
+    plt.tight_layout()
+    filepath = os.path.join(output_dir, "11_reads_vs_spike.png")
+    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+    plt.close()
+    return filepath
+
+
 # ---------------------------------------------------------------------------
 # Orchestrator
 # ---------------------------------------------------------------------------
@@ -1100,6 +1143,10 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
         created.append(filepath)
 
     filepath = create_negative_control_abundance_barplot(full_df, mongo_data, output_dir)
+    if filepath:
+        created.append(filepath)
+
+    filepath = create_reads_vs_spike_scatter(full_df, mongo_data, output_dir)
     if filepath:
         created.append(filepath)
 
