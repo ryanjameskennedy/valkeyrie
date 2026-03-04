@@ -24,7 +24,7 @@ import seaborn as sns
 # Statistics
 # ---------------------------------------------------------------------------
 
-def calculate_material_statistics(df, material_column='material'):
+def calculate_material_statistics(df, material_column='material', reads_col='number_of_reads'):
     """Calculate material type vs success rate stats, chi-square, Cramer's V."""
 
     click.echo("\n" + "=" * 80)
@@ -74,8 +74,8 @@ def calculate_material_statistics(df, material_column='material'):
                     if 'library_concentration' in subset.columns else None
                 ),
                 'mean_reads': (
-                    subset['number_of_reads'].mean()
-                    if 'number_of_reads' in subset.columns else None
+                    subset[reads_col].mean()
+                    if reads_col in subset.columns else None
                 ),
             })
 
@@ -276,13 +276,15 @@ def create_material_concentration_boxplot(df, material_stats, material_column, o
 
 
 def create_material_reads_boxplot(df, material_stats, material_column, output_dir,
-                                  max_reads=None):
+                                  max_reads=None, reads_col='number_of_reads'):
     """Plot 2: Read count distribution by material."""
     click.echo("Creating plot 2: Read count distribution by material...")
 
-    if 'number_of_reads' not in df.columns:
+    if reads_col not in df.columns:
         click.echo("  No read count data available")
         return None
+
+    reads_label = 'Normalised Read Count' if reads_col == 'normalised_reads' else 'Number of Reads'
 
     fig, ax = plt.subplots(figsize=(14, 7))
 
@@ -293,7 +295,7 @@ def create_material_reads_boxplot(df, material_stats, material_column, output_di
     reads_labels = []
 
     for material in materials_ordered:
-        material_data = df[df[material_column] == material]['number_of_reads'].fillna(0)
+        material_data = df[df[material_column] == material][reads_col].fillna(0)
         if len(material_data) > 0:
             reads_data.append(material_data.values)
             reads_labels.append(material)
@@ -328,7 +330,7 @@ def create_material_reads_boxplot(df, material_stats, material_column, output_di
     cbar.set_label('Success Rate (%)', fontsize=10)
 
     ax.set_xlabel(material_column.replace('_', ' ').title(), fontsize=12)
-    ax.set_ylabel('Number of Reads', fontsize=12)
+    ax.set_ylabel(reads_label, fontsize=12)
     ax.set_xticklabels(reads_labels, rotation=45, ha='right')
     ax.grid(axis='y', alpha=0.3)
     ax.set_ylim(0, max_reads)
@@ -381,13 +383,15 @@ def create_material_success_rates(df, material_stats, material_column, output_di
 
 
 def create_material_bubble_plot(df, material_stats, material_column, output_dir,
-                                max_reads=None):
+                                max_reads=None, reads_col='number_of_reads'):
     """Plot 4: Bubble plot of mean proportion removed vs mean reads by material."""
     click.echo("Creating plot 4: Mean proportion of reads removed vs mean read count bubble plot...")
 
-    if 'number_of_reads' not in df.columns:
+    if reads_col not in df.columns:
         click.echo("  No read count data available")
         return None
+
+    reads_label = 'Mean Normalised Read Count' if reads_col == 'normalised_reads' else 'Mean Number of Reads'
 
     fig, ax = plt.subplots(figsize=(10, 7))
 
@@ -403,7 +407,7 @@ def create_material_bubble_plot(df, material_stats, material_column, output_dir,
         material = info['material']
         material_df = df[df[material_column] == material]
         mean_prop_removed = material_df['proportion_removed'].mean()
-        mean_read = material_df['number_of_reads'].mean()
+        mean_read = material_df[reads_col].mean()
 
         if not pd.isna(mean_prop_removed) and not pd.isna(mean_read):
             mean_props.append(mean_prop_removed)
@@ -441,7 +445,7 @@ def create_material_bubble_plot(df, material_stats, material_column, output_dir,
     adjust_text(texts, ax=ax)
 
     ax.set_xlabel('Mean Proportion of Reads Removed', fontsize=12)
-    ax.set_ylabel('Mean Number of Reads', fontsize=12)
+    ax.set_ylabel(reads_label, fontsize=12)
     ax.grid(alpha=0.3)
 
     ax.set_ylim(0, max_reads)
@@ -587,7 +591,8 @@ def create_material_contamination_plot(contamination_df, output_dir):
     return filepath
 
 
-def create_failed_sample_investigation(df, material_column, output_dir, max_reads=None):
+def create_failed_sample_investigation(df, material_column, output_dir, max_reads=None,
+                                        reads_col='number_of_reads'):
     """Plot 7: Scatter of reads vs concentration for failed samples, colored by failure category."""
     click.echo("Creating plot 7: Failed sample investigation...")
 
@@ -614,11 +619,13 @@ def create_failed_sample_investigation(df, material_column, output_dir, max_read
             return 'Dilution Test'
         return 'No Test'
 
+    reads_label = 'Normalised Read Count' if reads_col == 'normalised_reads' else 'Number of Reads'
+
     mismatches['reason_category'] = mismatches.apply(_reason_category, axis=1)
     mismatches['test_type'] = mismatches.apply(_test_type, axis=1)
-    mismatches['number_of_reads'] = mismatches['number_of_reads'].fillna(0)
+    mismatches[reads_col] = mismatches[reads_col].fillna(0)
     if max_reads is not None:
-        mismatches = mismatches[mismatches['number_of_reads'] <= max_reads]
+        mismatches = mismatches[mismatches[reads_col] <= max_reads]
     if len(mismatches) == 0:
         reads_desc = f"\u2264{max_reads}" if max_reads is not None else "any"
         click.echo(f"  No failed samples with {reads_desc} reads")
@@ -643,7 +650,7 @@ def create_failed_sample_investigation(df, material_column, output_dir, max_read
             ]
             if len(subset) == 0:
                 continue
-            ax.scatter(subset['number_of_reads'], subset['proportion_removed'],
+            ax.scatter(subset[reads_col], subset['proportion_removed'],
                        s=80, alpha=0.7, color=reason_palette[reason],
                        marker=test_markers[test], edgecolors='white', linewidth=0.5)
 
@@ -651,11 +658,11 @@ def create_failed_sample_investigation(df, material_column, output_dir, max_read
     from adjustText import adjust_text
     texts = []
     for _, row in mismatches.iterrows():
-        texts.append(ax.text(row['number_of_reads'], row['proportion_removed'],
+        texts.append(ax.text(row[reads_col], row['proportion_removed'],
                              row[material_column], fontsize=7, alpha=0.7))
     adjust_text(texts, ax=ax)
 
-    ax.set_xlabel('Number of Reads', fontsize=12)
+    ax.set_xlabel(reads_label, fontsize=12)
     ax.set_ylabel('Proportion of Reads Removed', fontsize=12)
     ax.set_xlim(0, max_reads)
     from matplotlib.lines import Line2D
@@ -1033,11 +1040,14 @@ def create_negative_control_abundance_barplot(full_df, mongo_data, output_dir):
     return filepath
 
 
-def create_reads_vs_spike_scatter(full_df, mongo_data, output_dir, max_reads=None):
+def create_reads_vs_spike_scatter(full_df, mongo_data, output_dir, max_reads=None,
+                                   reads_col='number_of_reads'):
     """Plot 11: Scatter of post-QC read count vs Agrobacterium fabrum spike abundance."""
-    if full_df is None or 'number_of_reads' not in full_df.columns:
+    if full_df is None or reads_col not in full_df.columns:
         click.echo("  No read count data available")
         return None
+
+    reads_label = 'Normalised read count (post-QC)' if reads_col == 'normalised_reads' else 'Number of reads (post-QC)'
 
     df = full_df.copy()
 
@@ -1052,13 +1062,13 @@ def create_reads_vs_spike_scatter(full_df, mongo_data, output_dir, max_reads=Non
         return 0.0
 
     df['spike_value'] = df['sample_id'].apply(_get_spike_estimated_counts)
-    df['number_of_reads'] = pd.to_numeric(df['number_of_reads'], errors='coerce')
+    df[reads_col] = pd.to_numeric(df[reads_col], errors='coerce')
 
-    mask = df['number_of_reads'] >= 0
+    mask = df[reads_col] >= 0
     if max_reads is not None:
-        mask &= df['number_of_reads'] <= max_reads
+        mask &= df[reads_col] <= max_reads
     df = df[mask]
-    df = df[df['number_of_reads'].notna()]
+    df = df[df[reads_col].notna()]
 
     range_str = f"0–{max_reads}" if max_reads is not None else "all"
     if len(df) == 0:
@@ -1090,12 +1100,12 @@ def create_reads_vs_spike_scatter(full_df, mongo_data, output_dir, max_reads=Non
         reg = sub[~sub['_is_neg_ctrl']]
         nc = sub[sub['_is_neg_ctrl']]
         if len(reg) > 0:
-            ax.scatter(reg['number_of_reads'], reg['spike_value'],
+            ax.scatter(reg[reads_col], reg['spike_value'],
                        color=run_colors[rid], alpha=0.7, s=50,
                        marker='o', edgecolors='white', linewidth=0.5,
                        label=str(rid))
         if len(nc) > 0:
-            ax.scatter(nc['number_of_reads'], nc['spike_value'],
+            ax.scatter(nc[reads_col], nc['spike_value'],
                        color=run_colors[rid], alpha=0.9, s=80,
                        marker='^', edgecolors='none', linewidth=0,
                        label=str(rid) + ' (neg ctrl)')
@@ -1106,12 +1116,12 @@ def create_reads_vs_spike_scatter(full_df, mongo_data, output_dir, max_reads=Non
         nan_reg = nan_sub[~nan_sub['_is_neg_ctrl']]
         nan_nc = nan_sub[nan_sub['_is_neg_ctrl']]
         if len(nan_reg) > 0:
-            ax.scatter(nan_reg['number_of_reads'], nan_reg['spike_value'],
+            ax.scatter(nan_reg[reads_col], nan_reg['spike_value'],
                        color='#808080', alpha=0.7, s=50,
                        marker='o', edgecolors='white', linewidth=0.5,
                        label='Unknown')
         if len(nan_nc) > 0:
-            ax.scatter(nan_nc['number_of_reads'], nan_nc['spike_value'],
+            ax.scatter(nan_nc[reads_col], nan_nc['spike_value'],
                        color='#808080', alpha=0.9, s=80,
                        marker='^', edgecolors='none', linewidth=0,
                        label='Unknown (neg ctrl)')
@@ -1133,7 +1143,7 @@ def create_reads_vs_spike_scatter(full_df, mongo_data, output_dir, max_reads=Non
                              title_fontsize=10, bbox_to_anchor=(1.02, 0), loc='lower left',
                              borderaxespad=0)
 
-    ax.set_xlabel('Number of reads (post-QC)', fontsize=12)
+    ax.set_xlabel(reads_label, fontsize=12)
     ax.set_ylabel('Agrobacterium fabrum estimated counts', fontsize=12)
     if max_reads is not None:
         ax.set_xlim(0, max_reads)
@@ -1156,7 +1166,8 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
                           contamination_materials=('cerebrospinalvätska','pleuravätska'),
                           full_df=None,
                           sequencing_run_id=None,
-                          max_reads=None):
+                          max_reads=None,
+                          normalise_read_counts=False):
     """Run the full material analysis: filter, stats, 10 plots, save CSV.
 
     Parameters
@@ -1177,7 +1188,11 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
         If provided, restrict spike plot to this sequencing run only.
     max_reads : int
         Cap for reads-axis in affected plots (plots 2, 4, 7, 11).
+    normalise_read_counts : bool
+        If True, use normalised_reads (cross-run normalised) instead of number_of_reads.
     """
+    reads_col = 'normalised_reads' if normalise_read_counts else 'number_of_reads'
+
     setup_plot_style()
     os.makedirs(output_dir, exist_ok=True)
 
@@ -1192,7 +1207,8 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
         return
 
     # Statistics
-    material_stats, material_counts = calculate_material_statistics(df, material_column=material_column)
+    material_stats, material_counts = calculate_material_statistics(df, material_column=material_column,
+                                                                    reads_col=reads_col)
 
     # Visualisations
     click.echo("\nGenerating visualisations...")
@@ -1203,7 +1219,7 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
         created.append(filepath)
 
     filepath = create_material_reads_boxplot(df, material_stats, material_column, output_dir,
-                                             max_reads=max_reads)
+                                             max_reads=max_reads, reads_col=reads_col)
     if filepath:
         created.append(filepath)
 
@@ -1212,7 +1228,7 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
         created.append(filepath)
 
     filepath = create_material_bubble_plot(df, material_stats, material_column, output_dir,
-                                           max_reads=max_reads)
+                                           max_reads=max_reads, reads_col=reads_col)
     if filepath:
         created.append(filepath)
 
@@ -1245,7 +1261,7 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
         click.echo(f"\nContamination data saved to {contamination_output}")
 
     filepath = create_failed_sample_investigation(df, material_column, output_dir,
-                                                  max_reads=max_reads)
+                                                  max_reads=max_reads, reads_col=reads_col)
     if filepath:
         created.append(filepath)
 
@@ -1272,7 +1288,7 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
         created.append(filepath)
 
     filepath = create_reads_vs_spike_scatter(full_df, mongo_data, output_dir,
-                                             max_reads=max_reads)
+                                             max_reads=max_reads, reads_col=reads_col)
     if filepath:
         created.append(filepath)
 

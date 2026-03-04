@@ -305,6 +305,19 @@ def build_converged_dataframe(input_df, mongo_data, matching_df, correct_concent
     merged['number_of_reads'] = pd.to_numeric(merged['number_of_reads'], errors='coerce')
     merged['unprocessed_reads'] = pd.to_numeric(merged['unprocessed_reads'], errors='coerce')
 
+    # Normalise read counts across sequencing runs
+    run_totals = merged.groupby('sequencing_run_id')['number_of_reads'].sum()
+    max_run_total = run_totals.max()
+    if pd.notna(max_run_total) and max_run_total > 0:
+        run_total_map = merged['sequencing_run_id'].map(run_totals)
+        merged['normalised_reads'] = np.where(
+            run_total_map > 0,
+            merged['number_of_reads'] * (max_run_total / run_total_map),
+            np.nan,
+        )
+    else:
+        merged['normalised_reads'] = np.nan
+
     with_unprocessed = merged['unprocessed_reads'].notna() & (merged['unprocessed_reads'] > 0)
     merged['proportion_removed'] = np.where(
         with_unprocessed,
@@ -342,7 +355,7 @@ def build_converged_dataframe(input_df, mongo_data, matching_df, correct_concent
 # Statistics
 # ---------------------------------------------------------------------------
 
-def calculate_statistics(df, concentration_col='library_concentration'):
+def calculate_statistics(df, concentration_col='library_concentration', reads_col='number_of_reads'):
     """Calculate concentration bin stats, correlations, and chi-square test."""
 
     click.echo("\n" + "=" * 80)
@@ -437,11 +450,11 @@ def calculate_statistics(df, concentration_col='library_concentration'):
         )
         click.echo(f"Point-biserial correlation: r = {pb_r:.3f}, p = {pb_p:.4f}")
 
-        if 'number_of_reads' in df_valid.columns:
-            reads_valid = df_valid[df_valid['number_of_reads'].notna()]
+        if reads_col in df_valid.columns:
+            reads_valid = df_valid[df_valid[reads_col].notna()]
             if len(reads_valid) > 2:
                 reads_pb_r, reads_pb_p = stats.pointbiserialr(
-                    reads_valid['matching'], reads_valid['number_of_reads']
+                    reads_valid['matching'], reads_valid[reads_col]
                 )
                 click.echo(
                     f"Point-biserial correlation (reads vs matching): "
@@ -642,13 +655,16 @@ def create_species_agreement_plot(df, output_dir, file_suffix=''):
     return filepath
 
 
-def create_mismatch_reads_plot(df, output_dir, file_suffix='', max_reads=None):
+def create_mismatch_reads_plot(df, output_dir, file_suffix='', max_reads=None,
+                               reads_col='number_of_reads'):
     """Plot 4: Read count boxplot by mismatch reason with outlier labels."""
     click.echo("Creating plot 4: Read count distribution by mismatch reason...")
 
-    if 'number_of_reads' not in df.columns:
+    if reads_col not in df.columns:
         click.echo("  No read count data available")
         return None
+
+    reads_label = 'Normalised Read Count' if reads_col == 'normalised_reads' else 'Number of Reads'
 
     fig, ax = plt.subplots(figsize=(10, 6))
 
@@ -658,7 +674,7 @@ def create_mismatch_reads_plot(df, output_dir, file_suffix='', max_reads=None):
         plt.close()
         return None
 
-    mismatches['number_of_reads'] = mismatches['number_of_reads'].fillna(0)
+    mismatches[reads_col] = mismatches[reads_col].fillna(0)
 
     reads_data = []
     labels = []
@@ -668,10 +684,10 @@ def create_mismatch_reads_plot(df, output_dir, file_suffix='', max_reads=None):
     for reason, color in MISMATCH_REASONS:
         subset = mismatches[mismatches['reason'] == reason]
         if len(subset) > 0:
-            reads_data.append(subset['number_of_reads'].values)
+            reads_data.append(subset[reads_col].values)
             labels.append(f"{reason}\n(n={len(subset)})")
             colors_list.append(color)
-            sample_ids_by_reason.append(subset[['sample_id', 'number_of_reads']].values)
+            sample_ids_by_reason.append(subset[['sample_id', reads_col]].values)
 
     if not reads_data:
         click.echo("  No data to plot")
@@ -709,7 +725,7 @@ def create_mismatch_reads_plot(df, output_dir, file_suffix='', max_reads=None):
                 ax.text(i + 1.05, reads, sample_id,
                         fontsize=8, ha='left', va='center', alpha=0.7)
 
-    ax.set_ylabel('Number of Reads', fontsize=12)
+    ax.set_ylabel(reads_label, fontsize=12)
     ax.grid(axis='y', alpha=0.3)
     ax.set_ylim(0, max_reads)
 
@@ -721,12 +737,14 @@ def create_mismatch_reads_plot(df, output_dir, file_suffix='', max_reads=None):
     return filepath
 
 
-def create_reads_by_category_plot(df, output_dir, file_suffix='', max_reads=None):
+def create_reads_by_category_plot(df, output_dir, file_suffix='', max_reads=None,
+                                   reads_col='number_of_reads'):
     """Plot 7: Read count distribution by match status and mismatch reason."""
     click.echo("Creating plot 7: Read count distribution by category...")
+    reads_label = 'Normalised Read Count' if reads_col == 'normalised_reads' else 'Number of Reads'
     suffix = f"_maxreads{max_reads}" if max_reads is not None else ""
     filepath = os.path.join(output_dir, f"07_reads_by_category{file_suffix}{suffix}.png")
-    result = _create_status_boxplot(df, 'number_of_reads', 'Number of Reads', filepath,
+    result = _create_status_boxplot(df, reads_col, reads_label, filepath,
                                     ylim=(0, max_reads))
     if result is None:
         click.echo("  No data to plot")
@@ -972,15 +990,18 @@ def create_dilution_sample_distribution(df, output_dir, file_suffix=''):
     return filepath
 
 
-def create_reads_removed_vs_reads_plot(df, output_dir, file_suffix='', max_reads=None):
+def create_reads_removed_vs_reads_plot(df, output_dir, file_suffix='', max_reads=None,
+                                        reads_col='number_of_reads'):
     """Plot 8: Proportion of reads removed vs number of reads."""
     click.echo("Creating plot 8: Proportion of reads removed vs number of reads...")
+
+    reads_label = 'Normalised Read Count' if reads_col == 'normalised_reads' else 'Number of Reads'
 
     fig, ax = plt.subplots(figsize=(10, 7))
 
     plot_df = df[df['matching'].notna()].copy()
     plot_df = plot_df[
-        plot_df['proportion_removed'].notna() & plot_df['number_of_reads'].notna()
+        plot_df['proportion_removed'].notna() & plot_df[reads_col].notna()
     ]
     if len(plot_df) == 0:
         click.echo("  No data to plot")
@@ -990,12 +1011,12 @@ def create_reads_removed_vs_reads_plot(df, output_dir, file_suffix='', max_reads
     for cat_name, cat_color in MATCH_CATEGORIES + MISMATCH_REASONS:
         cat_samples = plot_df[plot_df['match_category'] == cat_name]
         if len(cat_samples) > 0:
-            ax.scatter(cat_samples['proportion_removed'], cat_samples['number_of_reads'],
+            ax.scatter(cat_samples['proportion_removed'], cat_samples[reads_col],
                        color=cat_color, label=f'{cat_name} (n={len(cat_samples)})',
                        alpha=0.6, s=60, edgecolors='black', linewidth=0.5)
 
     ax.set_xlabel('Proportion of Reads Removed', fontsize=12)
-    ax.set_ylabel('Number of Reads', fontsize=12)
+    ax.set_ylabel(reads_label, fontsize=12)
     ax.legend(fontsize=10, bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0)
     ax.grid(alpha=0.3)
     ax.set_ylim(0, max_reads)
@@ -1013,7 +1034,7 @@ def create_reads_removed_vs_reads_plot(df, output_dir, file_suffix='', max_reads
 # ---------------------------------------------------------------------------
 
 def run_concentration_analysis(converged_df, output_dir, file_suffix='', verbose=False,
-                               max_reads=None):
+                               max_reads=None, normalise_read_counts=False):
     """Run the full concentration analysis: filter, stats, plots, save CSV.
 
     Parameters
@@ -1026,7 +1047,11 @@ def run_concentration_analysis(converged_df, output_dir, file_suffix='', verbose
         Suffix appended to output filenames (e.g. '_corrected').
     max_reads : int
         Cap for reads-axis in affected plots (plots 4, 7, 8).
+    normalise_read_counts : bool
+        If True, use normalised_reads (cross-run normalised) instead of number_of_reads.
     """
+    reads_col = 'normalised_reads' if normalise_read_counts else 'number_of_reads'
+
     setup_plot_style()
     os.makedirs(output_dir, exist_ok=True)
 
@@ -1054,7 +1079,7 @@ def run_concentration_analysis(converged_df, output_dir, file_suffix='', verbose
         click.echo("\nNo samples classified as mismatch.")
 
     # Statistics
-    valid_data, bin_stats = calculate_statistics(filtered_df)
+    valid_data, bin_stats = calculate_statistics(filtered_df, reads_col=reads_col)
     print_sanger_species_summary(filtered_df, verbose=verbose)
     print_matching_category_summary(filtered_df, verbose=verbose)
 
@@ -1069,11 +1094,11 @@ def run_concentration_analysis(converged_df, output_dir, file_suffix='', verbose
         lambda: create_concentration_by_status_plot(filtered_df, output_dir, file_suffix=file_suffix),
         lambda: create_sample_distribution_combined(filtered_df, output_dir, file_suffix=file_suffix),
         lambda: create_species_agreement_plot(filtered_df, output_dir, file_suffix=file_suffix),
-        lambda: create_mismatch_reads_plot(filtered_df, output_dir, file_suffix=file_suffix, max_reads=max_reads),
+        lambda: create_mismatch_reads_plot(filtered_df, output_dir, file_suffix=file_suffix, max_reads=max_reads, reads_col=reads_col),
         lambda: create_dilution_test_plot(filtered_df, output_dir, file_suffix=file_suffix),
         lambda: create_dilution_sample_distribution(filtered_df, output_dir, file_suffix=file_suffix),
-        lambda: create_reads_by_category_plot(filtered_df, output_dir, file_suffix=file_suffix, max_reads=max_reads),
-        lambda: create_reads_removed_vs_reads_plot(filtered_df, output_dir, file_suffix=file_suffix, max_reads=max_reads),
+        lambda: create_reads_by_category_plot(filtered_df, output_dir, file_suffix=file_suffix, max_reads=max_reads, reads_col=reads_col),
+        lambda: create_reads_removed_vs_reads_plot(filtered_df, output_dir, file_suffix=file_suffix, max_reads=max_reads, reads_col=reads_col),
     ]:
         path = plot_fn()
         if path:

@@ -45,11 +45,14 @@ def cli():
                    'are excluded from plot 11. Defaults to no cap.')
 @click.option('--correct-concentration', is_flag=True,
               help='Correct library concentration by the ratio of processed to unprocessed reads')
+@click.option('--normalise-read-counts', is_flag=True,
+              help='Normalise read counts across sequencing runs before plotting '
+                   '(scales each run to the run with the most total reads)')
 @click.option('-v', '--verbose', is_flag=True,
               help='Enable verbose output')
 def validate(input_csv, output_dir, mongo_uri, mongo_db, mongo_collection,
              material_column, contamination_material, sequencing_run_id, max_reads,
-             correct_concentration, verbose):
+             correct_concentration, normalise_read_counts, verbose):
     """Run full 16S validation pipeline.
 
     Takes a CSV with sample_id, dilution_test, proteinase_k_test columns,
@@ -116,7 +119,8 @@ def validate(input_csv, output_dir, mongo_uri, mongo_db, mongo_collection,
     file_suffix = '_corrected' if correct_concentration else ''
     filtered_df = run_concentration_analysis(converged_df, output_dir,
                                              file_suffix=file_suffix, verbose=verbose,
-                                             max_reads=max_reads)
+                                             max_reads=max_reads,
+                                             normalise_read_counts=normalise_read_counts)
 
     # 6. Run material analysis (saves 5 plots + contamination CSV)
     click.echo("\n" + "=" * 80)
@@ -130,6 +134,7 @@ def validate(input_csv, output_dir, mongo_uri, mongo_db, mongo_collection,
         full_df=converged_df,
         sequencing_run_id=sequencing_run_id,
         max_reads=max_reads,
+        normalise_read_counts=normalise_read_counts,
     )
 
     click.echo("\n" + "=" * 80)
