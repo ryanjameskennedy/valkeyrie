@@ -4,6 +4,7 @@ Ported from analyse_material_success.py. Uses pre-fetched MongoDB data
 instead of per-sample queries.
 """
 
+import hashlib
 import os
 
 import click
@@ -18,6 +19,30 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import seaborn as sns
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+def _species_color_map(species_names):
+    """Return a dict mapping each species name to a stable matplotlib colour.
+
+    Colour is derived from an MD5 hash of the name so the same species always
+    gets the same colour regardless of which other species are present in the plot.
+    'Other' is always grey.  The 40-colour palette (tab20 + tab20b) matches the
+    scheme used by create_negative_control_abundance_barplot.
+    """
+    tab20  = plt.get_cmap('tab20')
+    tab20b = plt.get_cmap('tab20b')
+    result = {}
+    for name in species_names:
+        if name == 'Other':
+            result[name] = (0.7, 0.7, 0.7, 1.0)
+        else:
+            idx = int(hashlib.md5(name.encode()).hexdigest(), 16) % 40
+            result[name] = tab20(idx) if idx < 20 else tab20b(idx - 20)
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -534,10 +559,9 @@ def create_material_contamination_plot(contamination_df, output_dir):
     else:
         matrix = np.zeros((len(sample_names), 0))
 
-    # Pick a qualitative colormap with enough colours for species
-    species_cmap = plt.get_cmap('tab20')
-    n_species = len(sorted_species)
-    species_colors = [species_cmap(i % 20) for i in range(n_species)]
+    # Assign colours via stable hash so species colours match across plots
+    species_color_map = _species_color_map(sorted_species)
+    species_colors = [species_color_map[s] for s in sorted_species]
 
     fig_width = max(10, len(sample_names) * 0.6)
     fig, ax = plt.subplots(figsize=(fig_width, 8))
@@ -664,7 +688,8 @@ def create_failed_sample_investigation(df, material_column, output_dir, max_read
     for _, row in mismatches.iterrows():
         texts.append(ax.text(row[reads_col], row['proportion_removed'],
                              row[material_column], fontsize=7, alpha=0.7))
-    adjust_text(texts, ax=ax)
+    adjust_text(texts, ax=ax,
+                arrowprops=dict(arrowstyle='->', color='grey', lw=0.5))
 
     ax.set_xlabel(reads_label, fontsize=12)
     ax.set_ylabel('Proportion of Reads Removed', fontsize=12)
@@ -925,6 +950,142 @@ def create_spike_abundance_boxplot(full_df, mongo_data, output_dir,
     return filepath
 
 
+def create_spike_detection_reads_plot(full_df, mongo_data, output_dir,
+                                      exclude_runs=None,
+                                      reads_col='number_of_reads'):
+    """Plot 12: Read count boxplot for IC3 samples — spike detected vs not detected."""
+    click.echo("Creating plot 12: IC3 spike detection vs reads boxplot...")
+
+    if full_df is None or reads_col not in full_df.columns:
+        click.echo("  No data available for spike detection reads plot")
+        return None
+
+    df = full_df.copy()
+
+    # Filter to IC3 only
+    if 'spike_concentration' not in df.columns:
+        click.echo("  No spike_concentration column available")
+        return None
+    df = df[df['spike_concentration'] == 'IC3']
+    if len(df) == 0:
+        click.echo("  No IC3 samples found")
+        return None
+
+    # Exclude specified runs
+    if exclude_runs:
+        if 'sequencing_run_id' in df.columns:
+            before = len(df)
+            df = df[~df['sequencing_run_id'].isin(exclude_runs)]
+            excluded = before - len(df)
+            if excluded > 0:
+                click.echo(f"  Excluded {excluded} samples from runs: {list(exclude_runs)}")
+        else:
+            click.echo("  No sequencing_run_id column; --exclude-run has no effect")
+
+    # Exclude negative controls
+    if 'sample_type' in df.columns:
+        neg_mask = df['sample_type'].apply(
+            lambda v: pd.notna(v) and 'negative control' in str(v).lower()
+        )
+        excluded_neg = neg_mask.sum()
+        if excluded_neg > 0:
+            click.echo(f"  Excluded {excluded_neg} negative control samples")
+        df = df[~neg_mask]
+
+    # Exclude QC-failed samples
+    if 'qc' in df.columns:
+        qc_mask = df['qc'].apply(
+            lambda v: pd.notna(v) and str(v).lower() in ('false', 'fail', 'failed')
+        )
+        excluded_qc = qc_mask.sum()
+        if excluded_qc > 0:
+            click.echo(f"  Excluded {excluded_qc} QC-failed samples")
+        df = df[~qc_mask]
+
+    if len(df) == 0:
+        click.echo("  No IC3 samples remaining after filtering")
+        return None
+
+    # Determine detection status for each sample
+    def _get_agrobacterium_abundance(sample_id):
+        doc = mongo_data.get(sample_id)
+        if not doc:
+            return 0.0
+        hits = doc.get('taxonomic_data', {}).get('hits', [])
+        for hit in hits:
+            if hit.get('species', '').lower() == 'agrobacterium fabrum':
+                return float(hit.get('abundance', 0) or 0)
+        return 0.0
+
+    df['agro_abundance'] = df['sample_id'].apply(_get_agrobacterium_abundance)
+    df['detected'] = df['agro_abundance'] > 0
+
+    detected_reads = df.loc[df['detected'], reads_col].dropna().tolist()
+    not_detected_reads = df.loc[~df['detected'], reads_col].dropna().tolist()
+
+    if len(detected_reads) == 0 or len(not_detected_reads) == 0:
+        click.echo(
+            f"  Warning: one group is empty "
+            f"(detected n={len(detected_reads)}, not detected n={len(not_detected_reads)}); "
+            "skipping plot"
+        )
+        return None
+
+    u_stat, p_value = stats.mannwhitneyu(detected_reads, not_detected_reads,
+                                         alternative='two-sided')
+    click.echo(f"  Detected: n={len(detected_reads)}, median={np.median(detected_reads):.0f}")
+    click.echo(f"  Not Detected: n={len(not_detected_reads)}, median={np.median(not_detected_reads):.0f}")
+    click.echo(f"  Mann-Whitney U={u_stat:.1f}, p={p_value:.4f}")
+
+    box_data = [detected_reads, not_detected_reads]
+    box_labels = ['Detected', 'Not Detected']
+    box_counts = [len(detected_reads), len(not_detected_reads)]
+    group_colors = ['#5B9BD5', '#ED7D31']
+
+    fig, ax = plt.subplots(figsize=(8, 6))
+
+    bp = ax.boxplot(
+        box_data, tick_labels=box_labels, patch_artist=True,
+        showmeans=True, widths=0.6,
+        boxprops=dict(linewidth=1.5),
+        whiskerprops=dict(linewidth=1.5),
+        capprops=dict(linewidth=1.5),
+        medianprops=dict(linewidth=2, color='darkred'),
+        meanprops=dict(marker='D', markerfacecolor='darkblue', markersize=6,
+                       markeredgecolor='black'),
+    )
+    for patch, color in zip(bp['boxes'], group_colors):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.7)
+
+    rng = np.random.default_rng(42)
+    for i, data in enumerate(box_data):
+        if len(data) > 0:
+            x_jitter = rng.normal(i + 1, 0.04, size=len(data))
+            ax.scatter(x_jitter, data, color='black', s=15, alpha=0.4, zorder=3)
+
+    from adjustText import adjust_text
+    texts = []
+    y_top = max((np.max(d) for d in box_data if len(d) > 0), default=0)
+    for i, n in enumerate(box_counts):
+        texts.append(ax.text(i + 1, y_top, f'n={n}',
+                             ha='center', va='bottom', fontsize=9, fontstyle='italic'))
+    if texts:
+        adjust_text(texts, ax=ax, only_move={'text': 'y'})
+
+    p_str = f'p = {p_value:.4f}' if p_value >= 0.0001 else 'p < 0.0001'
+    ax.set_title(f'IC3 Spike Detection vs Read Count\n(Mann-Whitney U {p_str})', fontsize=12)
+    reads_label = 'Normalised Reads' if reads_col == 'normalised_reads' else 'Number of Reads'
+    ax.set_ylabel(reads_label, fontsize=12)
+    ax.grid(axis='y', alpha=0.3)
+
+    plt.tight_layout()
+    filepath = os.path.join(output_dir, '12_spike_ic3_detection_reads.png')
+    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+    plt.close()
+    return filepath
+
+
 def create_negative_control_abundance_barplot(full_df, mongo_data, output_dir):
     """Plot 10: Stacked species abundance barplot for negative control samples.
 
@@ -1006,17 +1167,9 @@ def create_negative_control_abundance_barplot(full_df, mongo_data, output_dir):
         for sd in per_sample
     ])
 
-    # Colormap
-    tab20 = plt.get_cmap('tab20')
-    tab20b = plt.get_cmap('tab20b')
-    n_species = len(sorted_species)
-    species_colors = [
-        tab20(i % 20) if i < 20 else tab20b(i % 20)
-        for i in range(n_species)
-    ]
-    # Make "Other" grey
-    if sorted_species[-1] == 'Other':
-        species_colors[-1] = (0.7, 0.7, 0.7, 1.0)
+    # Assign colours via stable hash so species colours match across plots
+    species_color_map = _species_color_map(sorted_species)
+    species_colors = [species_color_map[s] for s in sorted_species]
 
     fig_width = max(10, len(sample_ids) * 0.6)
     fig, ax = plt.subplots(figsize=(fig_width, 8))
@@ -1180,7 +1333,8 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
                           full_df=None,
                           sequencing_run_id=None,
                           max_reads=None,
-                          normalise_read_counts=False):
+                          normalise_read_counts=False,
+                          exclude_runs=None):
     """Run the full material analysis: filter, stats, 10 plots, save CSV.
 
     Parameters
@@ -1203,6 +1357,8 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
         Cap for reads-axis in affected plots (plots 2, 4, 7, 11).
     normalise_read_counts : bool
         If True, use normalised_reads (cross-run normalised) instead of number_of_reads.
+    exclude_runs : tuple or list of str, optional
+        Sequencing run IDs to exclude from the spike IC3 detection reads plot.
     """
     reads_col = 'normalised_reads' if normalise_read_counts else 'number_of_reads'
 
@@ -1302,6 +1458,13 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
 
     filepath = create_reads_vs_spike_scatter(full_df, mongo_data, output_dir,
                                              max_reads=max_reads, reads_col=reads_col)
+    if filepath:
+        created.append(filepath)
+
+    # Plot 12: IC3 detection vs read count
+    filepath = create_spike_detection_reads_plot(full_df, mongo_data, output_dir,
+                                                  exclude_runs=exclude_runs,
+                                                  reads_col=reads_col)
     if filepath:
         created.append(filepath)
 

@@ -43,6 +43,9 @@ def cli():
 @click.option('--max-reads', default=None, show_default=True, type=int,
               help='Cap for reads-axis in affected plots; samples above this threshold '
                    'are excluded from plot 11. Defaults to no cap.')
+@click.option('--exclude-run', 'exclude_runs', multiple=True, default=(),
+              help='Sequencing run ID to exclude from spike detection analysis '
+                   '(repeat flag for multiple)')
 @click.option('--correct-concentration', is_flag=True,
               help='Correct library concentration by the ratio of processed to unprocessed reads')
 @click.option('--normalise-read-counts', is_flag=True,
@@ -52,7 +55,7 @@ def cli():
               help='Enable verbose output')
 def validate(input_csv, output_dir, mongo_uri, mongo_db, mongo_collection,
              material_column, contamination_material, sequencing_run_id, max_reads,
-             correct_concentration, normalise_read_counts, verbose):
+             exclude_runs, correct_concentration, normalise_read_counts, verbose):
     """Run full 16S validation pipeline.
 
     Takes a CSV with sample_id, dilution_test, proteinase_k_test columns,
@@ -135,6 +138,7 @@ def validate(input_csv, output_dir, mongo_uri, mongo_db, mongo_collection,
         sequencing_run_id=sequencing_run_id,
         max_reads=max_reads,
         normalise_read_counts=normalise_read_counts,
+        exclude_runs=exclude_runs,
     )
 
     click.echo("\n" + "=" * 80)
