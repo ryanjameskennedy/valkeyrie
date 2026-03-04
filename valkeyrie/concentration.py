@@ -505,6 +505,38 @@ def print_sanger_species_summary(df, verbose=False):
             )
 
 
+_MATCH_CATEGORY_ORDER = [
+    'Species Match', 'Genus Match', 'Partial Match',
+    'QC Failed', 'Inhibition', 'Mismatch',
+]
+
+def print_matching_category_summary(df, verbose=False):
+    """Print counts of match_category; with verbose, list each sample."""
+    if 'match_category' not in df.columns:
+        return
+
+    click.echo("\n" + "-" * 80)
+    click.echo("MATCHING CATEGORISATION")
+    click.echo("-" * 80)
+
+    counts = df['match_category'].value_counts()
+    total = len(df)
+    for cat in _MATCH_CATEGORY_ORDER:
+        n = counts.get(cat, 0)
+        if n > 0:
+            click.echo(f"  {cat}: {n} ({n / total * 100:.1f}%)")
+
+    if verbose:
+        click.echo("\n  Per-sample classification:")
+        for _, row in df.sort_values('sample_id').iterrows():
+            reason = row.get('reason', '')
+            cat = row.get('match_category', '')
+            if reason and reason != cat:
+                click.echo(f"    {row['sample_id']}: {cat}  ({reason})")
+            else:
+                click.echo(f"    {row['sample_id']}: {cat}")
+
+
 def create_sanger_species_barplot(df, output_dir, file_suffix=''):
     """Plot Xb: Bar chart of sanger expected species classification counts."""
     click.echo("Creating sanger species type barplot...")
@@ -610,7 +642,7 @@ def create_species_agreement_plot(df, output_dir, file_suffix=''):
     return filepath
 
 
-def create_mismatch_reads_plot(df, output_dir, file_suffix='', max_reads=5000):
+def create_mismatch_reads_plot(df, output_dir, file_suffix='', max_reads=None):
     """Plot 4: Read count boxplot by mismatch reason with outlier labels."""
     click.echo("Creating plot 4: Read count distribution by mismatch reason...")
 
@@ -660,7 +692,7 @@ def create_mismatch_reads_plot(df, output_dir, file_suffix='', max_reads=5000):
         patch.set_alpha(0.7)
 
     for i, data in enumerate(reads_data):
-        data_in_range = data[data <= max_reads]
+        data_in_range = data if max_reads is None else data[data <= max_reads]
         x_jitter = np.random.default_rng(42).normal(i + 1, 0.04, size=len(data_in_range))
         ax.scatter(x_jitter, data_in_range, color='black', s=15, alpha=0.4, zorder=3)
 
@@ -673,7 +705,7 @@ def create_mismatch_reads_plot(df, output_dir, file_suffix='', max_reads=5000):
         upper_bound = q3 + 1.5 * iqr
 
         for sample_id, reads in sample_info:
-            if (reads < lower_bound or reads > upper_bound) and reads <= max_reads:
+            if (reads < lower_bound or reads > upper_bound) and (max_reads is None or reads <= max_reads):
                 ax.text(i + 1.05, reads, sample_id,
                         fontsize=8, ha='left', va='center', alpha=0.7)
 
@@ -682,16 +714,18 @@ def create_mismatch_reads_plot(df, output_dir, file_suffix='', max_reads=5000):
     ax.set_ylim(0, max_reads)
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, f"04_mismatch_reads{file_suffix}_maxreads{max_reads}.png")
+    suffix = f"_maxreads{max_reads}" if max_reads is not None else ""
+    filepath = os.path.join(output_dir, f"04_mismatch_reads{file_suffix}{suffix}.png")
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     return filepath
 
 
-def create_reads_by_category_plot(df, output_dir, file_suffix='', max_reads=5000):
+def create_reads_by_category_plot(df, output_dir, file_suffix='', max_reads=None):
     """Plot 7: Read count distribution by match status and mismatch reason."""
     click.echo("Creating plot 7: Read count distribution by category...")
-    filepath = os.path.join(output_dir, f"07_reads_by_category{file_suffix}_maxreads{max_reads}.png")
+    suffix = f"_maxreads{max_reads}" if max_reads is not None else ""
+    filepath = os.path.join(output_dir, f"07_reads_by_category{file_suffix}{suffix}.png")
     result = _create_status_boxplot(df, 'number_of_reads', 'Number of Reads', filepath,
                                     ylim=(0, max_reads))
     if result is None:
@@ -938,7 +972,7 @@ def create_dilution_sample_distribution(df, output_dir, file_suffix=''):
     return filepath
 
 
-def create_reads_removed_vs_reads_plot(df, output_dir, file_suffix='', max_reads=5000):
+def create_reads_removed_vs_reads_plot(df, output_dir, file_suffix='', max_reads=None):
     """Plot 8: Proportion of reads removed vs number of reads."""
     click.echo("Creating plot 8: Proportion of reads removed vs number of reads...")
 
@@ -967,7 +1001,8 @@ def create_reads_removed_vs_reads_plot(df, output_dir, file_suffix='', max_reads
     ax.set_ylim(0, max_reads)
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, f"08_reads_removed_vs_reads{file_suffix}_maxreads{max_reads}.png")
+    suffix = f"_maxreads{max_reads}" if max_reads is not None else ""
+    filepath = os.path.join(output_dir, f"08_reads_removed_vs_reads{file_suffix}{suffix}.png")
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     return filepath
@@ -978,7 +1013,7 @@ def create_reads_removed_vs_reads_plot(df, output_dir, file_suffix='', max_reads
 # ---------------------------------------------------------------------------
 
 def run_concentration_analysis(converged_df, output_dir, file_suffix='', verbose=False,
-                               max_reads=5000):
+                               max_reads=None):
     """Run the full concentration analysis: filter, stats, plots, save CSV.
 
     Parameters
@@ -1021,6 +1056,7 @@ def run_concentration_analysis(converged_df, output_dir, file_suffix='', verbose
     # Statistics
     valid_data, bin_stats = calculate_statistics(filtered_df)
     print_sanger_species_summary(filtered_df, verbose=verbose)
+    print_matching_category_summary(filtered_df, verbose=verbose)
 
     # Visualisations
     click.echo("\nGenerating visualisations...")

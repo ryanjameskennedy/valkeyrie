@@ -276,7 +276,7 @@ def create_material_concentration_boxplot(df, material_stats, material_column, o
 
 
 def create_material_reads_boxplot(df, material_stats, material_column, output_dir,
-                                  max_reads=5000):
+                                  max_reads=None):
     """Plot 2: Read count distribution by material."""
     click.echo("Creating plot 2: Read count distribution by material...")
 
@@ -334,7 +334,8 @@ def create_material_reads_boxplot(df, material_stats, material_column, output_di
     ax.set_ylim(0, max_reads)
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, f"02_{material_column}_reads_boxplot_maxreads{max_reads}.png")
+    suffix = f"_maxreads{max_reads}" if max_reads is not None else ""
+    filepath = os.path.join(output_dir, f"02_{material_column}_reads_boxplot{suffix}.png")
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     return filepath
@@ -380,7 +381,7 @@ def create_material_success_rates(df, material_stats, material_column, output_di
 
 
 def create_material_bubble_plot(df, material_stats, material_column, output_dir,
-                                max_reads=5000):
+                                max_reads=None):
     """Plot 4: Bubble plot of mean proportion removed vs mean reads by material."""
     click.echo("Creating plot 4: Mean proportion of reads removed vs mean read count bubble plot...")
 
@@ -417,7 +418,8 @@ def create_material_bubble_plot(df, material_stats, material_column, output_dir,
         return None
 
     # Filter materials whose mean read count exceeds the visible y-range
-    in_range = [i for i, r in enumerate(mean_reads) if r <= max_reads]
+    in_range = list(range(len(mean_reads))) if max_reads is None else \
+               [i for i, r in enumerate(mean_reads) if r <= max_reads]
     mean_props    = [mean_props[i]    for i in in_range]
     mean_reads    = [mean_reads[i]    for i in in_range]
     success_rates = [success_rates[i] for i in in_range]
@@ -448,7 +450,8 @@ def create_material_bubble_plot(df, material_stats, material_column, output_dir,
     cbar.set_label('Success Rate (%)', fontsize=10)
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, f"04_{material_column}_reads_removed_vs_reads_bubble_maxreads{max_reads}.png")
+    suffix = f"_maxreads{max_reads}" if max_reads is not None else ""
+    filepath = os.path.join(output_dir, f"04_{material_column}_reads_removed_vs_reads_bubble{suffix}.png")
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     return filepath
@@ -584,7 +587,7 @@ def create_material_contamination_plot(contamination_df, output_dir):
     return filepath
 
 
-def create_failed_sample_investigation(df, material_column, output_dir, max_reads=5000):
+def create_failed_sample_investigation(df, material_column, output_dir, max_reads=None):
     """Plot 7: Scatter of reads vs concentration for failed samples, colored by failure category."""
     click.echo("Creating plot 7: Failed sample investigation...")
 
@@ -614,9 +617,11 @@ def create_failed_sample_investigation(df, material_column, output_dir, max_read
     mismatches['reason_category'] = mismatches.apply(_reason_category, axis=1)
     mismatches['test_type'] = mismatches.apply(_test_type, axis=1)
     mismatches['number_of_reads'] = mismatches['number_of_reads'].fillna(0)
-    mismatches = mismatches[mismatches['number_of_reads'] <= max_reads]
+    if max_reads is not None:
+        mismatches = mismatches[mismatches['number_of_reads'] <= max_reads]
     if len(mismatches) == 0:
-        click.echo(f"  No failed samples with \u2264{max_reads} reads")
+        reads_desc = f"\u2264{max_reads}" if max_reads is not None else "any"
+        click.echo(f"  No failed samples with {reads_desc} reads")
         return None
 
     reason_palette = {
@@ -668,7 +673,8 @@ def create_failed_sample_investigation(df, material_column, output_dir, max_read
     ax.grid(alpha=0.3)
 
     plt.tight_layout()
-    filepath = os.path.join(output_dir, f"07_{material_column}_failed_sample_investigation_maxreads{max_reads}.png")
+    suffix = f"_maxreads{max_reads}" if max_reads is not None else ""
+    filepath = os.path.join(output_dir, f"07_{material_column}_failed_sample_investigation{suffix}.png")
     plt.savefig(filepath, dpi=300, bbox_inches='tight')
     plt.close()
     return filepath
@@ -1150,7 +1156,7 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
                           contamination_materials=('cerebrospinalvätska','pleuravätska'),
                           full_df=None,
                           sequencing_run_id=None,
-                          max_reads=5000):
+                          max_reads=None):
     """Run the full material analysis: filter, stats, 10 plots, save CSV.
 
     Parameters
