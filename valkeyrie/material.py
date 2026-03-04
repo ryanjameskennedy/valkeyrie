@@ -1069,10 +1069,14 @@ def create_reads_vs_spike_scatter(full_df, mongo_data, output_dir, max_reads=Non
 
     fig, ax = plt.subplots(figsize=(9, 6))
 
-    # Build per-run colour map
+    # Build per-run colour map (tab20 then tab20b, matching plot 10)
     run_ids = [r for r in df['sequencing_run_id'].unique() if pd.notna(r)]
-    cmap = plt.cm.get_cmap('tab20', max(len(run_ids), 1))
-    run_colors = {rid: cmap(i) for i, rid in enumerate(run_ids)}
+    _tab20 = plt.get_cmap('tab20')
+    _tab20b = plt.get_cmap('tab20b')
+    run_colors = {
+        rid: _tab20(i % 20) if i < 20 else _tab20b(i % 20)
+        for i, rid in enumerate(run_ids)
+    }
 
     # Plot each run, splitting regular vs negative controls
     for rid in run_ids:

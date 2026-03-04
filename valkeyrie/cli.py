@@ -40,9 +40,9 @@ def cli():
               help='Material type(s) for contamination analysis (repeat flag for multiple)')
 @click.option('--sequencing-run-id', default=None,
               help='Filter spike analysis to a specific sequencing run ID')
-@click.option('--max-reads', default=5000, show_default=True, type=int,
+@click.option('--max-reads', default=None, show_default=True, type=int,
               help='Cap for reads-axis in affected plots; samples above this threshold '
-                   'are excluded from plot 11.')
+                   'are excluded from plot 11. Defaults to no cap.')
 @click.option('--correct-concentration', is_flag=True,
               help='Correct library concentration by the ratio of processed to unprocessed reads')
 @click.option('-v', '--verbose', is_flag=True,
