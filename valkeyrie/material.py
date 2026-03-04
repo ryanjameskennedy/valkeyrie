@@ -358,10 +358,14 @@ def create_material_success_rates(df, material_stats, material_column, output_di
     bars = ax.bar(range(len(materials)), success_rates, alpha=0.7,
                   edgecolor='black', color='#44aa44')
 
+    from adjustText import adjust_text
+    texts = []
     for i, (bar, n) in enumerate(zip(bars, n_samples)):
         height = bar.get_height()
-        ax.text(bar.get_x() + bar.get_width() / 2., height + 2,
-                f'n={n}', ha='center', va='bottom', fontsize=9)
+        texts.append(ax.text(bar.get_x() + bar.get_width() / 2., height + 2,
+                             f'n={n}', ha='center', va='bottom', fontsize=9))
+    if texts:
+        adjust_text(texts, ax=ax, only_move={'text': 'y'})
 
     overall_mean = df['matching'].mean() * 100
     ax.axhline(y=overall_mean, color='red', linestyle='--', linewidth=2,
@@ -745,10 +749,14 @@ def create_multi_species_genus_detection(df, material_column, output_dir):
         ax.scatter(x_jitter, data, color='black', s=15, alpha=0.4, zorder=3)
 
     # Annotate each box with sample count
+    from adjustText import adjust_text
+    texts = []
     for i, m in enumerate(material_order):
         n = len(plot_df[plot_df[material_column] == m])
-        ax.text(i + 1, ax.get_ylim()[1] * 0.01 + 1.02, f'n={n}',
-                ha='center', va='bottom', fontsize=9)
+        texts.append(ax.text(i + 1, ax.get_ylim()[1] * 0.01 + 1.02, f'n={n}',
+                             ha='center', va='bottom', fontsize=9))
+    if texts:
+        adjust_text(texts, ax=ax, only_move={'text': 'y'})
 
     ax.set_xlabel(material_column.replace('_', ' ').title(), fontsize=12)
     ax.set_ylabel('Proportion of Expected Species Detected (Genus Level)', fontsize=12)
@@ -893,9 +901,14 @@ def create_spike_abundance_boxplot(full_df, mongo_data, output_dir,
             ax.scatter(x_jitter, data, color='black', s=15, alpha=0.4, zorder=3)
 
     # Add sample count annotations above each box
+    from adjustText import adjust_text
+    texts = []
     y_top = max((np.max(d) for d in box_data if len(d) > 0), default=0)
     for i, n in enumerate(box_counts):
-        ax.text(i + 1, y_top, f'n={n}', ha='center', va='bottom', fontsize=9, fontstyle='italic')
+        texts.append(ax.text(i + 1, y_top, f'n={n}',
+                             ha='center', va='bottom', fontsize=9, fontstyle='italic'))
+    if texts:
+        adjust_text(texts, ax=ax, only_move={'text': 'y'})
 
     ylabel = 'Estimated Counts' if metric == 'estimated_counts' else 'Abundance (%)'
     ax.set_ylabel(ylabel, fontsize=12)

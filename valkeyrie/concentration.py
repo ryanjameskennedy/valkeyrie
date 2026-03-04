@@ -713,6 +713,8 @@ def create_mismatch_reads_plot(df, output_dir, file_suffix='', max_reads=None,
         ax.scatter(x_jitter, data_in_range, color='black', s=15, alpha=0.4, zorder=3)
 
     # Label outliers
+    from adjustText import adjust_text
+    texts = []
     for i, (data, sample_info) in enumerate(zip(reads_data, sample_ids_by_reason)):
         q1 = np.percentile(data, 25)
         q3 = np.percentile(data, 75)
@@ -722,8 +724,10 @@ def create_mismatch_reads_plot(df, output_dir, file_suffix='', max_reads=None,
 
         for sample_id, reads in sample_info:
             if (reads < lower_bound or reads > upper_bound) and (max_reads is None or reads <= max_reads):
-                ax.text(i + 1.05, reads, sample_id,
-                        fontsize=8, ha='left', va='center', alpha=0.7)
+                texts.append(ax.text(i + 1.05, reads, sample_id,
+                                     fontsize=8, ha='left', va='center', alpha=0.7))
+    if texts:
+        adjust_text(texts, ax=ax)
 
     ax.set_ylabel(reads_label, fontsize=12)
     ax.grid(axis='y', alpha=0.3)
@@ -867,9 +871,13 @@ def create_dilution_test_plot(df, output_dir, file_suffix=''):
             ax.text(x_array[i] + bar_width / 2, 1.05, 'X', ha='center', va='bottom',
                     fontsize=16, fontweight='bold', color='red')
 
+    from adjustText import adjust_text
+    texts = []
     for i, species in enumerate(sanger_species):
-        ax.text(x_array[i], 1.15, species, ha='center', va='bottom',
-                fontsize=9, rotation=0, style='italic')
+        texts.append(ax.text(x_array[i], 1.15, species, ha='center', va='bottom',
+                             fontsize=9, rotation=0, style='italic'))
+    if texts:
+        adjust_text(texts, ax=ax, only_move={'text': 'y'})
 
     ax.set_ylabel('Sample', fontsize=12)
     ax.set_xlabel('Sample Pair', fontsize=12)
