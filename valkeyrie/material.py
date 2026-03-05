@@ -25,23 +25,59 @@ import seaborn as sns
 # Helpers
 # ---------------------------------------------------------------------------
 
+# 32 hand-curated colours — every entry is perceptually distinct from all
+# others.  Do not reorder; the MD5-modulo assignment depends on stable indices.
+_SPECIES_PALETTE = [
+    '#e6194b',  # 0  vivid crimson
+    '#3cb44b',  # 1  vivid green
+    '#4363d8',  # 2  royal blue
+    '#f58231',  # 3  vivid orange
+    '#42d4f4',  # 4  sky cyan
+    '#f032e6',  # 5  vivid magenta
+    '#ffe119',  # 6  vivid yellow
+    '#911eb4',  # 7  deep violet
+    '#bfef45',  # 8  lime yellow-green
+    '#9A6324',  # 9  warm brown
+    '#469990',  # 10 dark teal
+    '#e377c2',  # 11 raspberry pink
+    '#d62728',  # 12 brick red
+    '#2ca02c',  # 13 forest green
+    '#1f77b4',  # 14 steel blue
+    '#ff7f0e',  # 15 amber orange
+    '#9467bd',  # 16 muted purple
+    '#17becf',  # 17 bright teal-cyan
+    '#bcbd22',  # 18 chartreuse
+    '#8c564b',  # 19 chestnut brown
+    '#800000',  # 20 maroon
+    '#808000',  # 21 olive
+    '#000080',  # 22 navy
+    '#aaffc3',  # 23 mint green (light)
+    '#ffd8b1',  # 24 peach (light)
+    '#dcbeff',  # 25 lavender (light)
+    '#fabebe',  # 26 light coral
+    '#9edae5',  # 27 pale teal (light)
+    '#f7b6d2',  # 28 pale pink (light)
+    '#c49c94',  # 29 pale salmon (light)
+    '#dbdb8d',  # 30 pale lime (light)
+    '#c5b0d5',  # 31 pale mauve (light)
+]
+
+
 def _species_color_map(species_names):
     """Return a dict mapping each species name to a stable matplotlib colour.
 
     Colour is derived from an MD5 hash of the name so the same species always
     gets the same colour regardless of which other species are present in the plot.
-    'Other' is always grey.  The 40-colour palette (tab20 + tab20b) matches the
-    scheme used by create_negative_control_abundance_barplot.
+    'Other' is always grey.  The 32-colour palette is hand-curated so every
+    entry is perceptually distinct.
     """
-    tab20  = plt.get_cmap('tab20')
-    tab20b = plt.get_cmap('tab20b')
     result = {}
     for name in species_names:
         if name == 'Other':
             result[name] = (0.7, 0.7, 0.7, 1.0)
         else:
-            idx = int(hashlib.md5(name.encode()).hexdigest(), 16) % 40
-            result[name] = tab20(idx) if idx < 20 else tab20b(idx - 20)
+            idx = int(hashlib.md5(name.encode()).hexdigest(), 16) % len(_SPECIES_PALETTE)
+            result[name] = _SPECIES_PALETTE[idx]
     return result
 
 
@@ -1327,6 +1363,141 @@ def create_reads_vs_spike_scatter(full_df, mongo_data, output_dir, max_reads=Non
 # Orchestrator
 # ---------------------------------------------------------------------------
 
+def create_nc_vs_validation_scatter(full_df, mongo_data, output_dir, verbose=False):
+    """Plot 13: Per-run scatter of NC species abundance vs validation sample abundance.
+
+    For every sequencing run, each species detected in a negative-control sample is
+    paired with every validation sample in the same run.  The resulting scatter point
+    has x = NC abundance (%) and y = validation-sample abundance (%).  Points are
+    coloured by sequencing run.
+
+    Parameters
+    ----------
+    full_df : DataFrame
+        Unfiltered converged data (includes negative controls).
+    mongo_data : dict[str, dict]
+        Pre-fetched MongoDB documents keyed by sample_id.
+    output_dir : str
+        Directory for the output PNG.
+    verbose : bool
+        If True, print every (NC, validation sample, species) triplet and its
+        coordinates to the terminal.
+    """
+    if full_df is None or 'sequencing_run_id' not in full_df.columns:
+        click.echo("  No sequencing run data available for NC vs validation scatter")
+        return None
+
+    def _is_neg_ctrl(sample_type):
+        return pd.notna(sample_type) and 'negative control' in str(sample_type).lower()
+
+    points = []  # list of (run_id, nc_abundance, val_abundance)
+
+    for run_id, run_df in full_df.groupby('sequencing_run_id', dropna=True):
+        nc_rows = run_df[run_df['sample_type'].apply(_is_neg_ctrl)]
+        val_rows = run_df[~run_df['sample_type'].apply(_is_neg_ctrl)]
+        if 'qc' in val_rows.columns:
+            val_rows = val_rows[val_rows['qc'] != 'fail']
+
+        if nc_rows.empty or val_rows.empty:
+            continue
+
+        # Collect per-NC species abundances
+        nc_species = []  # list of (nc_sample_id, species, abundance)
+        for _, nc_row in nc_rows.iterrows():
+            nc_sid = nc_row['sample_id']
+            doc = mongo_data.get(nc_sid)
+            if not doc:
+                continue
+            hits = doc.get('taxonomic_data', {}).get('hits', [])
+            for hit in hits:
+                ab = float(hit.get('abundance', 0) or 0)
+                if ab > 0:
+                    nc_species.append((nc_sid, hit.get('species', ''), ab))
+
+        if not nc_species:
+            continue
+
+        # Build lookup of validation species abundances
+        val_lookup = {}  # val_sample_id -> {species: abundance}
+        for _, val_row in val_rows.iterrows():
+            vsid = val_row['sample_id']
+            doc = mongo_data.get(vsid)
+            if not doc:
+                val_lookup[vsid] = {}
+                continue
+            hits = doc.get('taxonomic_data', {}).get('hits', [])
+            val_lookup[vsid] = {
+                hit.get('species', ''): float(hit.get('abundance', 0) or 0)
+                for hit in hits
+            }
+
+        if verbose:
+            n_species = len({sp for _, sp, _ in nc_species})
+            click.echo(
+                f"  Run {run_id} — {n_species} NC species × "
+                f"{len(val_rows)} validation samples = "
+                f"{n_species * len(val_rows)} points"
+            )
+
+        for nc_sid, species, nc_ab in nc_species:
+            for vsid, sp_map in val_lookup.items():
+                val_ab = sp_map.get(species, 0.0)
+                points.append((run_id, nc_ab, val_ab))
+                if verbose:
+                    click.echo(
+                        f"    {nc_sid:<20}  ×  {vsid:<20}  |  "
+                        f"{species:<35}  NC: {nc_ab:6.2f}%  Val: {val_ab:6.2f}%"
+                    )
+
+    if not points:
+        click.echo("  No NC vs validation data to plot")
+        return None
+
+    click.echo(f"  {len(points)} NC × validation species points across all runs")
+
+    # Build colour map matching create_reads_vs_spike_scatter
+    run_ids_ordered = list(dict.fromkeys(p[0] for p in points))
+    _tab20 = plt.get_cmap('tab20')
+    _tab20b = plt.get_cmap('tab20b')
+    run_colors = {
+        rid: _tab20(i % 20) if i < 20 else _tab20b(i % 20)
+        for i, rid in enumerate(run_ids_ordered)
+    }
+
+    fig, ax = plt.subplots(figsize=(9, 7))
+
+    plotted_runs = set()
+    for run_id, nc_ab, val_ab in points:
+        label = str(run_id) if run_id not in plotted_runs else None
+        ax.scatter(nc_ab, val_ab,
+                   color=run_colors[run_id],
+                   alpha=0.5, s=40, marker='o',
+                   edgecolors='white', linewidth=0.3,
+                   label=label)
+        plotted_runs.add(run_id)
+
+    # y = x diagonal reference line
+    all_vals = [ab for _, ab, _ in points] + [ab for _, _, ab in points]
+    lim_max = max(all_vals) * 1.05 if all_vals else 1
+    ax.plot([0, lim_max], [0, lim_max], color='grey', linestyle='--',
+            linewidth=0.8, zorder=0)
+
+    ax.set_xlabel("Abundance in Negative Control (%)")
+    ax.set_ylabel("Abundance in Validation Sample (%)")
+    ax.set_title("NC Species Abundance vs Validation Sample Abundance")
+    ax.set_xlim(left=0)
+    ax.set_ylim(bottom=0)
+
+    if plotted_runs:
+        ax.legend(title="Sequencing Run", bbox_to_anchor=(1.02, 1),
+                  loc='upper left', fontsize=8, title_fontsize=9)
+
+    filepath = os.path.join(output_dir, '13_nc_vs_validation_abundance.png')
+    plt.savefig(filepath, dpi=300, bbox_inches='tight')
+    plt.close()
+    return filepath
+
+
 def run_material_analysis(converged_df, mongo_data, output_dir,
                           material_column='material',
                           contamination_materials=('cerebrospinalvätska','pleuravätska'),
@@ -1334,7 +1505,8 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
                           sequencing_run_id=None,
                           max_reads=None,
                           normalise_read_counts=False,
-                          exclude_runs=None):
+                          exclude_runs=None,
+                          verbose=False):
     """Run the full material analysis: filter, stats, 10 plots, save CSV.
 
     Parameters
@@ -1465,6 +1637,12 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
     filepath = create_spike_detection_reads_plot(full_df, mongo_data, output_dir,
                                                   exclude_runs=exclude_runs,
                                                   reads_col=reads_col)
+    if filepath:
+        created.append(filepath)
+
+    # Plot 13: NC vs validation species abundance scatter
+    filepath = create_nc_vs_validation_scatter(full_df, mongo_data, output_dir,
+                                               verbose=verbose)
     if filepath:
         created.append(filepath)
 

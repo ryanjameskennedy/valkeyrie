@@ -139,6 +139,7 @@ def validate(input_csv, output_dir, mongo_uri, mongo_db, mongo_collection,
         max_reads=max_reads,
         normalise_read_counts=normalise_read_counts,
         exclude_runs=exclude_runs,
+        verbose=verbose,
     )
 
     click.echo("\n" + "=" * 80)
