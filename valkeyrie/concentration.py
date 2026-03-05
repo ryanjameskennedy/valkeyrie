@@ -493,8 +493,12 @@ _SPECIES_TYPE_COLORS = {
 }
 
 
-def print_sanger_species_summary(df, verbose=False):
-    """Print counts of sanger_species_type categories; with verbose, list each sample."""
+def print_sanger_species_summary(df, verbose=0):
+    """Print counts of sanger_species_type categories.
+
+    verbose >= 1: list Sanger species-level samples not matched at species level.
+    verbose >= 2: full per-sample classification dump.
+    """
     if 'sanger_species_type' not in df.columns:
         return
 
@@ -509,7 +513,27 @@ def print_sanger_species_summary(df, verbose=False):
         if n > 0:
             click.echo(f"  {cat}: {n} ({n / total * 100:.1f}%)")
 
-    if verbose:
+    if verbose >= 1:
+        species_level_types = {'Single Species', 'Polymicrobial'}
+        if 'match_category' in df.columns:
+            unmatched = df[
+                df['sanger_species_type'].isin(species_level_types) &
+                (df['match_category'] != 'Species Match')
+            ]
+        else:
+            unmatched = df[df['sanger_species_type'].isin(species_level_types)]
+        if len(unmatched) > 0:
+            click.echo(
+                "\n  SANGER SPECIES-LEVEL SAMPLES NOT MATCHED AT SPECIES LEVEL BY NANOPORE"
+            )
+            for _, row in unmatched.sort_values('sample_id').iterrows():
+                click.echo(
+                    f"    {row['sample_id']}  [{row['sanger_species_type']}]  "
+                    f"Sanger: {row.get('sanger_expected_species', '')}  "
+                    f"\u2192  {row.get('match_category', '')}"
+                )
+
+    if verbose >= 2:
         click.echo("\n  Per-sample classification:")
         for _, row in df.sort_values('sample_id').iterrows():
             click.echo(
@@ -523,8 +547,12 @@ _MATCH_CATEGORY_ORDER = [
     'QC Failed', 'Inhibition', 'Mismatch',
 ]
 
-def print_matching_category_summary(df, verbose=False):
-    """Print counts of match_category; with verbose, list each sample."""
+def print_matching_category_summary(df, verbose=0):
+    """Print counts of match_category.
+
+    verbose >= 1: list per-sample details for Partial Match only.
+    verbose >= 2: full per-sample dump for all categories.
+    """
     if 'match_category' not in df.columns:
         return
 
@@ -539,7 +567,15 @@ def print_matching_category_summary(df, verbose=False):
         if n > 0:
             click.echo(f"  {cat}: {n} ({n / total * 100:.1f}%)")
 
-    if verbose:
+    if verbose >= 1:
+        partial = df[df['match_category'] == 'Partial Match']
+        if len(partial) > 0:
+            click.echo("\n  Partial Match details:")
+            for _, row in partial.sort_values('sample_id').iterrows():
+                reason = row.get('reason', '')
+                click.echo(f"    {row['sample_id']}  ({reason})")
+
+    if verbose >= 2:
         click.echo("\n  Per-sample classification:")
         for _, row in df.sort_values('sample_id').iterrows():
             reason = row.get('reason', '')
@@ -1041,7 +1077,7 @@ def create_reads_removed_vs_reads_plot(df, output_dir, file_suffix='', max_reads
 # Orchestrator
 # ---------------------------------------------------------------------------
 
-def run_concentration_analysis(converged_df, output_dir, file_suffix='', verbose=False,
+def run_concentration_analysis(converged_df, output_dir, file_suffix='', verbose=0,
                                max_reads=None, normalise_read_counts=False):
     """Run the full concentration analysis: filter, stats, plots, save CSV.
 

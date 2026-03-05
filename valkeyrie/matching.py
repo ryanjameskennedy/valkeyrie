@@ -135,13 +135,15 @@ def categorize_match(sanger_species, nanopore_species):
     }
 
 
-def generate_matching(samples_data):
+def generate_matching(samples_data, verbose=0):
     """Generate matching DataFrame from pre-fetched MongoDB data.
 
     Parameters
     ----------
     samples_data : dict[str, dict]
         Mapping of sample_id to MongoDB document (from fetch_samples_bulk).
+    verbose : int
+        Verbosity level (0=quiet, 1=actionable, 2=full debug).
 
     Returns
     -------
@@ -220,7 +222,7 @@ def generate_matching(samples_data):
         if match_result['matching']:
             matched += 1
 
-        if processed % 10 == 0:
+        if verbose >= 2 and processed % 10 == 0:
             click.echo(f"Processed {processed} samples...")
 
     click.echo(f"\nProcessing complete:")

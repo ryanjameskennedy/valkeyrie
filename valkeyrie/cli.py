@@ -51,8 +51,9 @@ def cli():
 @click.option('--normalise-read-counts', is_flag=True,
               help='Normalise read counts across sequencing runs before plotting '
                    '(scales each run to the run with the most total reads)')
-@click.option('-v', '--verbose', is_flag=True,
-              help='Enable verbose output')
+@click.option('-v', '--verbose', count=True,
+              help='Verbose output (-v: unmatched species, partial matches; '
+                   '-vv: full plot 13 pairwise data)')
 def validate(input_csv, output_dir, mongo_uri, mongo_db, mongo_collection,
              material_column, contamination_material, sequencing_run_id, max_reads,
              exclude_runs, correct_concentration, normalise_read_counts, verbose):
@@ -105,7 +106,7 @@ def validate(input_csv, output_dir, mongo_uri, mongo_db, mongo_collection,
     mongo_data = fetch_samples_bulk(collection, sample_ids)
 
     # 3. Generate matching (Sanger vs Nanopore)
-    matching_df = generate_matching(mongo_data)
+    matching_df = generate_matching(mongo_data, verbose=verbose)
 
     # 4. Build converged DataFrame
     converged_df = build_converged_dataframe(input_df, mongo_data, matching_df,

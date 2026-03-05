@@ -1363,7 +1363,7 @@ def create_reads_vs_spike_scatter(full_df, mongo_data, output_dir, max_reads=Non
 # Orchestrator
 # ---------------------------------------------------------------------------
 
-def create_nc_vs_validation_scatter(full_df, mongo_data, output_dir, verbose=False):
+def create_nc_vs_validation_scatter(full_df, mongo_data, output_dir, verbose=0):
     """Plot 13: Per-run scatter of NC species abundance vs validation sample abundance.
 
     For every sequencing run, each species detected in a negative-control sample is
@@ -1379,9 +1379,8 @@ def create_nc_vs_validation_scatter(full_df, mongo_data, output_dir, verbose=Fal
         Pre-fetched MongoDB documents keyed by sample_id.
     output_dir : str
         Directory for the output PNG.
-    verbose : bool
-        If True, print every (NC, validation sample, species) triplet and its
-        coordinates to the terminal.
+    verbose : int
+        Verbosity level.  1 = per-run summary; 2 = full per-triplet printout.
     """
     if full_df is None or 'sequencing_run_id' not in full_df.columns:
         click.echo("  No sequencing run data available for NC vs validation scatter")
@@ -1431,7 +1430,7 @@ def create_nc_vs_validation_scatter(full_df, mongo_data, output_dir, verbose=Fal
                 for hit in hits
             }
 
-        if verbose:
+        if verbose >= 1:
             n_species = len({sp for _, sp, _ in nc_species})
             click.echo(
                 f"  Run {run_id} — {n_species} NC species × "
@@ -1443,7 +1442,7 @@ def create_nc_vs_validation_scatter(full_df, mongo_data, output_dir, verbose=Fal
             for vsid, sp_map in val_lookup.items():
                 val_ab = sp_map.get(species, 0.0)
                 points.append((run_id, nc_ab, val_ab))
-                if verbose:
+                if verbose >= 2:
                     click.echo(
                         f"    {nc_sid:<20}  ×  {vsid:<20}  |  "
                         f"{species:<35}  NC: {nc_ab:8.0f}  Val: {val_ab:8.0f}"
@@ -1499,7 +1498,7 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
                           max_reads=None,
                           normalise_read_counts=False,
                           exclude_runs=None,
-                          verbose=False):
+                          verbose=0):
     """Run the full material analysis: filter, stats, 10 plots, save CSV.
 
     Parameters
