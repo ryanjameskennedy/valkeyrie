@@ -25,41 +25,42 @@ import seaborn as sns
 # Helpers
 # ---------------------------------------------------------------------------
 
-# 32 hand-curated colours — every entry is perceptually distinct from all
-# others.  Do not reorder; the MD5-modulo assignment depends on stable indices.
+# 31 colours interleaved with stride 10 (coprime to 31) so that adjacent
+# palette indices are perceptually far apart.  The MD5-modulo assignment in
+# _species_color_map therefore gives visually distinct colours to species
+# whose names hash to neighbouring indices.
 _SPECIES_PALETTE = [
-    '#e6194b',  # 0  vivid crimson
-    '#3cb44b',  # 1  vivid green
-    '#4363d8',  # 2  royal blue
-    '#f58231',  # 3  vivid orange
-    '#42d4f4',  # 4  sky cyan
-    '#f032e6',  # 5  vivid magenta
-    '#ffe119',  # 6  vivid yellow
-    '#911eb4',  # 7  deep violet
-    '#bfef45',  # 8  lime yellow-green
-    '#9A6324',  # 9  warm brown
-    '#469990',  # 10 dark teal
-    '#e377c2',  # 11 raspberry pink
-    '#d62728',  # 12 brick red
-    '#2ca02c',  # 13 forest green
-    '#1f77b4',  # 14 steel blue
-    '#ff7f0e',  # 15 amber orange
-    '#9467bd',  # 16 muted purple
-    '#17becf',  # 17 bright teal-cyan
-    '#bcbd22',  # 18 chartreuse
-    '#8c564b',  # 19 chestnut brown
-    '#800000',  # 20 maroon
-    '#808000',  # 21 olive
-    '#000080',  # 22 navy
-    '#aaffc3',  # 23 mint green (light)
-    '#ffd8b1',  # 24 peach (light)
-    '#dcbeff',  # 25 lavender (light)
-    '#fabebe',  # 26 light coral
-    '#9edae5',  # 27 pale teal (light)
-    '#f7b6d2',  # 28 pale pink (light)
-    '#c49c94',  # 29 pale salmon (light)
-    '#dbdb8d',  # 30 pale lime (light)
-    '#c5b0d5',  # 31 pale mauve (light)
+    '#add8e6',  #  0  light blue
+    '#ff00ff',  #  1  magenta
+    '#8b4513',  #  2  saddle brown
+    '#808080',  #  3  grey
+    '#da70d6',  #  4  orchid
+    '#808000',  #  5  olive
+    '#008b8b',  #  6  dark cyan
+    '#800080',  #  7  purple
+    '#f0e68c',  #  8  khaki
+    '#00ffff',  #  9  cyan
+    '#8a2be2',  # 10  blue violet
+    '#f4a460',  # 11  sandy brown
+    '#00ff7f',  # 12  spring green
+    '#7b68ee',  # 13  medium slate blue
+    '#ffa500',  # 14  orange
+    '#228b22',  # 15  forest green
+    '#483d8b',  # 16  dark slate blue
+    '#ff4500',  # 17  orange red
+    '#8fbc8f',  # 18  dark sea green
+    '#00008b',  # 19  dark blue
+    '#f08080',  # 20  light coral
+    '#90ee90',  # 21  light green
+    '#0000ff',  # 22  blue
+    '#dc143c',  # 23  crimson
+    '#7cfc00',  # 24  lawn green
+    '#1e90ff',  # 25  dodger blue
+    '#b03060',  # 26  maroon
+    '#9acd32',  # 27  yellow green
+    '#00bfff',  # 28  deep sky blue
+    '#ff1493',  # 29  deep pink
+    '#ffff00',  # 30  yellow
 ]
 
 
@@ -1410,7 +1411,7 @@ def create_nc_vs_validation_scatter(full_df, mongo_data, output_dir, verbose=Fal
                 continue
             hits = doc.get('taxonomic_data', {}).get('hits', [])
             for hit in hits:
-                ab = float(hit.get('abundance', 0) or 0)
+                ab = float(hit.get('estimated_counts', 0) or 0)
                 if ab > 0:
                     nc_species.append((nc_sid, hit.get('species', ''), ab))
 
@@ -1427,7 +1428,7 @@ def create_nc_vs_validation_scatter(full_df, mongo_data, output_dir, verbose=Fal
                 continue
             hits = doc.get('taxonomic_data', {}).get('hits', [])
             val_lookup[vsid] = {
-                hit.get('species', ''): float(hit.get('abundance', 0) or 0)
+                hit.get('species', ''): float(hit.get('estimated_counts', 0) or 0)
                 for hit in hits
             }
 
@@ -1446,7 +1447,7 @@ def create_nc_vs_validation_scatter(full_df, mongo_data, output_dir, verbose=Fal
                 if verbose:
                     click.echo(
                         f"    {nc_sid:<20}  ×  {vsid:<20}  |  "
-                        f"{species:<35}  NC: {nc_ab:6.2f}%  Val: {val_ab:6.2f}%"
+                        f"{species:<35}  NC: {nc_ab:8.0f}  Val: {val_ab:8.0f}"
                     )
 
     if not points:
@@ -1457,10 +1458,9 @@ def create_nc_vs_validation_scatter(full_df, mongo_data, output_dir, verbose=Fal
 
     # Build colour map matching create_reads_vs_spike_scatter
     run_ids_ordered = list(dict.fromkeys(p[0] for p in points))
-    _tab20 = plt.get_cmap('tab20')
-    _tab20b = plt.get_cmap('tab20b')
+    _set1 = plt.get_cmap('Set1')
     run_colors = {
-        rid: _tab20(i % 20) if i < 20 else _tab20b(i % 20)
+        rid: _set1(i % 9)
         for i, rid in enumerate(run_ids_ordered)
     }
 
@@ -1482,9 +1482,9 @@ def create_nc_vs_validation_scatter(full_df, mongo_data, output_dir, verbose=Fal
     ax.plot([0, lim_max], [0, lim_max], color='grey', linestyle='--',
             linewidth=0.8, zorder=0)
 
-    ax.set_xlabel("Abundance in Negative Control (%)")
-    ax.set_ylabel("Abundance in Validation Sample (%)")
-    ax.set_title("NC Species Abundance vs Validation Sample Abundance")
+    ax.set_xlabel("Estimated Counts in Negative Control")
+    ax.set_ylabel("Estimated Counts in Validation Sample")
+    ax.set_title("NC Species Estimated Counts vs Validation Sample")
     ax.set_xlim(left=0)
     ax.set_ylim(bottom=0)
 
