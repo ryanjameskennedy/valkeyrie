@@ -25,42 +25,41 @@ import seaborn as sns
 # Helpers
 # ---------------------------------------------------------------------------
 
-# 31 colours interleaved with stride 10 (coprime to 31) so that adjacent
-# palette indices are perceptually far apart.  The MD5-modulo assignment in
-# _species_color_map therefore gives visually distinct colours to species
-# whose names hash to neighbouring indices.
+# 30 colours: 22 curated entries followed by 8 gap-filling colours drawn
+# from the previous palette (orange, cyan, magenta, light blue, orange red,
+# orchid, deep pink, light coral).
+# Do not reorder; the MD5-modulo assignment depends on stable indices.
 _SPECIES_PALETTE = [
-    '#add8e6',  #  0  light blue
-    '#ff00ff',  #  1  magenta
-    '#8b4513',  #  2  saddle brown
-    '#808080',  #  3  grey
-    '#da70d6',  #  4  orchid
-    '#808000',  #  5  olive
-    '#008b8b',  #  6  dark cyan
-    '#800080',  #  7  purple
-    '#f0e68c',  #  8  khaki
-    '#00ffff',  #  9  cyan
-    '#8a2be2',  # 10  blue violet
-    '#f4a460',  # 11  sandy brown
-    '#00ff7f',  # 12  spring green
-    '#7b68ee',  # 13  medium slate blue
-    '#ffa500',  # 14  orange
-    '#228b22',  # 15  forest green
-    '#483d8b',  # 16  dark slate blue
-    '#ff4500',  # 17  orange red
-    '#8fbc8f',  # 18  dark sea green
-    '#00008b',  # 19  dark blue
-    '#f08080',  # 20  light coral
-    '#90ee90',  # 21  light green
-    '#0000ff',  # 22  blue
-    '#dc143c',  # 23  crimson
-    '#7cfc00',  # 24  lawn green
-    '#1e90ff',  # 25  dodger blue
-    '#b03060',  # 26  maroon
-    '#9acd32',  # 27  yellow green
-    '#00bfff',  # 28  deep sky blue
-    '#ff1493',  # 29  deep pink
-    '#ffff00',  # 30  yellow
+    '#800000',  #  0  maroon / dark red
+    '#9a6324',  #  1  brown
+    '#808000',  #  2  olive
+    '#469990',  #  3  teal
+    '#000075',  #  4  navy
+    '#000000',  #  5  black
+    '#e6194b',  #  6  red
+    '#158231',  #  7  forest green
+    '#ffe119',  #  8  golden yellow
+    '#bfef45',  #  9  lime
+    '#3cb44b',  # 10  medium green
+    '#42d414',  # 11  chartreuse
+    '#4363d8',  # 12  medium blue
+    '#911eb4',  # 13  purple
+    '#1032e6',  # 14  bright blue
+    '#a9a9a9',  # 15  silver grey
+    '#fabed4',  # 16  light pink
+    '#ffd8b1',  # 17  peach
+    '#fffac8',  # 18  pale yellow
+    '#aaffc3',  # 19  mint
+    '#dcbeff',  # 20  lavender
+    '#ffffff',  # 21  white
+    '#ffa500',  # 22  orange
+    '#00ffff',  # 23  cyan
+    '#ff00ff',  # 24  magenta
+    '#add8e6',  # 25  light blue
+    '#ff4500',  # 26  orange red
+    '#da70d6',  # 27  orchid
+    '#ff1493',  # 28  deep pink
+    '#f08080',  # 29  light coral
 ]
 
 
@@ -1476,17 +1475,11 @@ def create_nc_vs_validation_scatter(full_df, mongo_data, output_dir, verbose=Fal
                    label=label)
         plotted_runs.add(run_id)
 
-    # y = x diagonal reference line
-    all_vals = [ab for _, ab, _ in points] + [ab for _, _, ab in points]
-    lim_max = max(all_vals) * 1.05 if all_vals else 1
-    ax.plot([0, lim_max], [0, lim_max], color='grey', linestyle='--',
-            linewidth=0.8, zorder=0)
-
     ax.set_xlabel("Estimated Counts in Negative Control")
     ax.set_ylabel("Estimated Counts in Validation Sample")
     ax.set_title("NC Species Estimated Counts vs Validation Sample")
-    ax.set_xlim(left=0)
-    ax.set_ylim(bottom=0)
+    ax.set_xlim(left=0, right=5000)
+    ax.set_ylim(bottom=0, top=5000)
 
     if plotted_runs:
         ax.legend(title="Sequencing Run", bbox_to_anchor=(1.02, 1),
