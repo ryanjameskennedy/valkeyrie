@@ -63,35 +63,30 @@ _SPECIES_PALETTE = [
 ]
 
 
-def _species_color_map(species_names):
-    """Return a dict mapping each species name to a stable matplotlib colour.
+def _species_color_map(species_names, color_registry=None, palette_remaining=None):
+    """Return a dict mapping each species name to a matplotlib colour.
 
-    Colour is derived from an MD5 hash of the name so the same species always
-    gets the same colour regardless of which other species are present in the plot,
-    provided no hash collision occurs.  When two species map to the same palette
-    index the later one (by hash value) is advanced to the next free slot so
-    every species in the returned dict has a unique colour.
-    'Other' is always grey.  The palette is hand-curated so every entry is
-    perceptually distinct.
+    If color_registry and palette_remaining are supplied (shared mutable objects) the
+    function looks up already-assigned species in the registry and pops new colours from
+    the remaining palette for new species.  This guarantees the same species always
+    receives the same colour across multiple calls that share the same objects.
+    'Other' is always grey.
     """
+    if color_registry is None:
+        color_registry = {}
+    if palette_remaining is None:
+        palette_remaining = list(_SPECIES_PALETTE)
+
     result = {}
-    used_indices = set()
-
-    non_other = [n for n in species_names if n != 'Other']
-    # Process in hash-value order so collision resolution is deterministic
-    non_other.sort(key=lambda n: int(hashlib.md5(n.encode()).hexdigest(), 16))
-
-    for name in non_other:
-        preferred = int(hashlib.md5(name.encode()).hexdigest(), 16) % len(_SPECIES_PALETTE)
-        idx = preferred
-        while idx in used_indices:
-            idx = (idx + 1) % len(_SPECIES_PALETTE)
-        used_indices.add(idx)
-        result[name] = _SPECIES_PALETTE[idx]
-
-    if 'Other' in species_names:
-        result['Other'] = (0.7, 0.7, 0.7, 1.0)
-
+    for name in species_names:
+        if name == 'Other':
+            result[name] = (0.7, 0.7, 0.7, 1.0)
+        elif name in color_registry:
+            result[name] = color_registry[name]
+        else:
+            colour = palette_remaining.pop(0)
+            color_registry[name] = colour
+            result[name] = colour
     return result
 
 
@@ -570,7 +565,8 @@ def create_contamination_heatmap(df, material_column, output_dir):
     return filepath
 
 
-def create_material_contamination_plot(contamination_df, output_dir):
+def create_material_contamination_plot(contamination_df, output_dir,
+                                       color_registry=None, palette_remaining=None):
     """Plot 6: Stacked barplot of contaminant species abundance per sample."""
     click.echo("Creating plot 6: Contamination analysis...")
 
@@ -609,8 +605,8 @@ def create_material_contamination_plot(contamination_df, output_dir):
     else:
         matrix = np.zeros((len(sample_names), 0))
 
-    # Assign colours via stable hash so species colours match across plots
-    species_color_map = _species_color_map(sorted_species)
+    # Assign colours via registry so species colours match across plots
+    species_color_map = _species_color_map(sorted_species, color_registry, palette_remaining)
     species_colors = [species_color_map[s] for s in sorted_species]
 
     fig_width = max(10, len(sample_names) * 0.6)
@@ -1136,7 +1132,8 @@ def create_spike_detection_reads_plot(full_df, mongo_data, output_dir,
     return filepath
 
 
-def create_negative_control_abundance_barplot(full_df, mongo_data, output_dir):
+def create_negative_control_abundance_barplot(full_df, mongo_data, output_dir,
+                                              color_registry=None, palette_remaining=None):
     """Plot 10: Stacked species abundance barplot for negative control samples.
 
     Shows what contaminants appear in negative control samples. Species with
@@ -1217,8 +1214,8 @@ def create_negative_control_abundance_barplot(full_df, mongo_data, output_dir):
         for sd in per_sample
     ])
 
-    # Assign colours via stable hash so species colours match across plots
-    species_color_map = _species_color_map(sorted_species)
+    # Assign colours via registry so species colours match across plots
+    species_color_map = _species_color_map(sorted_species, color_registry, palette_remaining)
     species_colors = [species_color_map[s] for s in sorted_species]
 
     fig_width = max(10, len(sample_ids) * 0.6)
@@ -1596,10 +1593,17 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
             contamination_df['contamination_material'] = contamination_material
             combined_parts.append(contamination_df)
 
+    # Shared colour state for plots that show species (plot 6 and plot 10)
+    color_registry = {}
+    palette_remaining = list(_SPECIES_PALETTE)
+
     if combined_parts:
         combined_contamination_df = pd.concat(combined_parts, ignore_index=True)
 
-        filepath = create_material_contamination_plot(combined_contamination_df, output_dir)
+        filepath = create_material_contamination_plot(
+            combined_contamination_df, output_dir,
+            color_registry=color_registry, palette_remaining=palette_remaining,
+        )
         if filepath:
             created.append(filepath)
 
@@ -1630,7 +1634,10 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
     if filepath:
         created.append(filepath)
 
-    filepath = create_negative_control_abundance_barplot(full_df, mongo_data, output_dir)
+    filepath = create_negative_control_abundance_barplot(
+        full_df, mongo_data, output_dir,
+        color_registry=color_registry, palette_remaining=palette_remaining,
+    )
     if filepath:
         created.append(filepath)
 
