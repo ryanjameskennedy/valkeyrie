@@ -191,6 +191,7 @@ def generate_matching(samples_data, verbose=0):
                 'matching': None, 'match_type': None, 'genus_match_count': None,
                 'sanger_missing_count': None, 'nanopore_missing_count': None,
                 'sanger_undetected_count': None,
+                'nanopore_species': None,
                 'qc': clean_string(qc), 'comments_qc': comments_qc,
             })
             skipped_controls += 1
@@ -214,6 +215,7 @@ def generate_matching(samples_data, verbose=0):
             'sanger_missing_count': match_result['sanger_missing_count'],
             'nanopore_missing_count': match_result['nanopore_missing_count'],
             'sanger_undetected_count': match_result['sanger_undetected_count'],
+            'nanopore_species': '; '.join(nanopore_species) if nanopore_species else None,
             'qc': clean_string(qc),
             'comments_qc': comments_qc,
         })

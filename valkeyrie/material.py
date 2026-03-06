@@ -988,6 +988,7 @@ def create_spike_abundance_boxplot(full_df, mongo_data, output_dir,
 
 def create_spike_detection_reads_plot(full_df, mongo_data, output_dir,
                                       exclude_runs=None,
+                                      max_reads=None,
                                       reads_col='number_of_reads'):
     """Plot 12: Read count boxplot for IC3 samples — spike detected vs not detected."""
     click.echo("Creating plot 12: IC3 spike detection vs reads boxplot...")
@@ -1109,11 +1110,10 @@ def create_spike_detection_reads_plot(full_df, mongo_data, output_dir,
     if texts:
         adjust_text(texts, ax=ax, only_move={'text': 'y'})
 
-    p_str = f'p = {p_value:.4f}' if p_value >= 0.0001 else 'p < 0.0001'
-    ax.set_title(f'IC3 Spike Detection vs Read Count\n(Mann-Whitney U {p_str})', fontsize=12)
     reads_label = 'Normalised Reads' if reads_col == 'normalised_reads' else 'Number of Reads'
     ax.set_ylabel(reads_label, fontsize=12)
     ax.grid(axis='y', alpha=0.3)
+    ax.set_ylim(bottom=0, top=max_reads)
 
     plt.tight_layout()
     filepath = os.path.join(output_dir, '12_spike_ic3_detection_reads.png')
@@ -1476,7 +1476,7 @@ def create_nc_vs_validation_scatter(full_df, mongo_data, output_dir, verbose=0):
 
     ax.set_xlabel("Estimated Counts in Negative Control")
     ax.set_ylabel("Estimated Counts in Validation Sample")
-    ax.set_title("NC Species Estimated Counts vs Validation Sample")
+
     ax.set_xlim(left=0, right=5000)
     ax.set_ylim(bottom=0, top=5000)
 
@@ -1628,6 +1628,7 @@ def run_material_analysis(converged_df, mongo_data, output_dir,
     # Plot 12: IC3 detection vs read count
     filepath = create_spike_detection_reads_plot(full_df, mongo_data, output_dir,
                                                   exclude_runs=exclude_runs,
+                                                  max_reads=max_reads,
                                                   reads_col=reads_col)
     if filepath:
         created.append(filepath)

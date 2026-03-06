@@ -575,6 +575,14 @@ def print_matching_category_summary(df, verbose=0):
                 reason = row.get('reason', '')
                 click.echo(f"    {row['sample_id']}  ({reason})")
 
+        genus = df[df['match_category'] == 'Genus Match']
+        if len(genus) > 0:
+            click.echo("\n  Genus Match details (Sanger expected \u2192 Nanopore found):")
+            for _, row in genus.sort_values('sample_id').iterrows():
+                sanger = row.get('sanger_expected_species', '') or ''
+                nanopore = row.get('nanopore_species', '') or ''
+                click.echo(f"    {row['sample_id']}  Sanger: {sanger}  \u2192  Nanopore: {nanopore}")
+
     if verbose >= 2:
         click.echo("\n  Per-sample classification:")
         for _, row in df.sort_values('sample_id').iterrows():
