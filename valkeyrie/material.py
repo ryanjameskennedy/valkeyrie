@@ -67,17 +67,31 @@ def _species_color_map(species_names):
     """Return a dict mapping each species name to a stable matplotlib colour.
 
     Colour is derived from an MD5 hash of the name so the same species always
-    gets the same colour regardless of which other species are present in the plot.
-    'Other' is always grey.  The 32-colour palette is hand-curated so every
-    entry is perceptually distinct.
+    gets the same colour regardless of which other species are present in the plot,
+    provided no hash collision occurs.  When two species map to the same palette
+    index the later one (by hash value) is advanced to the next free slot so
+    every species in the returned dict has a unique colour.
+    'Other' is always grey.  The palette is hand-curated so every entry is
+    perceptually distinct.
     """
     result = {}
-    for name in species_names:
-        if name == 'Other':
-            result[name] = (0.7, 0.7, 0.7, 1.0)
-        else:
-            idx = int(hashlib.md5(name.encode()).hexdigest(), 16) % len(_SPECIES_PALETTE)
-            result[name] = _SPECIES_PALETTE[idx]
+    used_indices = set()
+
+    non_other = [n for n in species_names if n != 'Other']
+    # Process in hash-value order so collision resolution is deterministic
+    non_other.sort(key=lambda n: int(hashlib.md5(n.encode()).hexdigest(), 16))
+
+    for name in non_other:
+        preferred = int(hashlib.md5(name.encode()).hexdigest(), 16) % len(_SPECIES_PALETTE)
+        idx = preferred
+        while idx in used_indices:
+            idx = (idx + 1) % len(_SPECIES_PALETTE)
+        used_indices.add(idx)
+        result[name] = _SPECIES_PALETTE[idx]
+
+    if 'Other' in species_names:
+        result['Other'] = (0.7, 0.7, 0.7, 1.0)
+
     return result
 
 
